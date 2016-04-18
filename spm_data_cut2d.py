@@ -1,6 +1,8 @@
 from spm_data_cut1d import *
 import copy
 from mpl_toolkits.axes_grid1 import make_axes_locatable    
+from scipy.ndimage import rotate as ndrotate
+
 
 def _modify_pos(nvec, npos, arrshape):
     """return control points for cut through entire plane;
@@ -69,7 +71,7 @@ class Cut2D:
         """
         
         for chan in self.channels:
-            self.channels[chan] = ndimage.rotate(self.channels[chan], angle, cval=np.nan)
+            self.channels[chan] = ndrotate(self.channels[chan], angle, cval=np.nan)
 
     def _process_cut_coords(self, posx, posy, posz, delta, deltaz, arrshape=None):
         """based on control points stored in posz, posx, posy create sampling points
@@ -233,13 +235,13 @@ class Cut2D:
             plt.show()
             
             arr[np.isnan(arr)] = 0
-            arr = ndimage.rotate(arr, phi, axes=(2,1))#, cval=np.nan) #(1,0)
+            arr = ndrotate(arr, phi, axes=(2,1))#, cval=np.nan) #(1,0)
 #            print("arr.shape: ", arr.shape)
 
             plt.imshow(arr[par])
             plt.show()
 
-            arr = ndimage.rotate(arr, rho, axes=(0,1))#, cval=np.nan)
+            arr = ndrotate(arr, rho, axes=(0,1))#, cval=np.nan)
             self.channels[chan] = arr[par]
 
             print("arr.shape: ", arr.shape)
@@ -281,7 +283,7 @@ class Cut2D:
 
         for chan, val in spmdata.channels.items():
             # BACHA, BACHA, BACHA!!! i zde se projevuje prehozeni xove a yove souradnice
-            self.channels[chan] = ndimage.map_coordinates(val,
+            self.channels[chan] = map_coordinates(val,
                 np.array([self.posz, self.posy, self.posx]), 
                 order=interpolate, mode='constant', cval=np.nan)
             # nearest-neighbour approximation
@@ -327,7 +329,7 @@ class Cut2D:
                 (xnum, ynum), dtype=float)
                 
             # new values
-            aux = ndimage.map_coordinates(val, [px, py], order=interpolation, cval=np.nan)
+            aux = map_coordinates(val, [px, py], order=interpolation, cval=np.nan)
             # OPET DILEMA x vs. y                
 
             # reallocate cut array
@@ -384,7 +386,7 @@ class Cut2D:
 #                
 #            # OPET DILEMA x vs. y
 #                
-#            aux = ndimage.map_coordinates(val, [px, py], order=interpolation)
+#            aux = map_coordinates(val, [px, py], order=interpolation)
 ##             VERSION 2 - END
 
 #            for xi in range(xnum):
@@ -435,7 +437,7 @@ class Cut2D:
     def show_channels(self, *cl, rescale=True, interpolation='none'):
         """plot 2D cut of channels
         
-        cl - list of channels to show
+        cl - list of channels to show; if empty, then all channels are chosen
         rescale - if False, imshow uses implicit colouring according to the data,
             if True, than plot is rescaled according to original spm data, so that
             colours of the cut are identical to that in the original data
@@ -443,24 +445,19 @@ class Cut2D:
         """
         
         # pick only valid channels
-        chanlist = []
-        for chan in cl:
-            if chan not in self.channels:
-                print("show_channels: Channel '{}' not present.".format(chan))
-            else:
-                chanlist.append(chan)
-            
-        if len(chanlist) == 0:
+        cl = cl if cl else self.channels.keys()
+        cl = [chan for chan in cl if chan in self.channels.keys()]
+        if len(cl) == 0:
             print("show_channels: No valid channels.")
             return
             
         # create figure
-        fig, subfiglist = plt.subplots(1, len(chanlist),
-                            num="1D Cut - channel: " + ", ".join(chanlist))
-        if len(chanlist) == 1: subfiglist = [subfiglist]
+        fig, subfiglist = plt.subplots(1, len(cl),
+                            num="1D Cut - channel: " + ", ".join(cl))
+        if len(cl) == 1: subfiglist = [subfiglist]
         
         # plot each valid channel
-        for i, chan in enumerate(chanlist):            
+        for i, chan in enumerate(cl):            
             # use the scale of the original SMPdata?
             vmin, vmax = self.minmax[chan] if rescale else (None, None)
             

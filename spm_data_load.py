@@ -1,149 +1,239 @@
-import struct
-import numpy as np
-import matplotlib.pyplot as plt
-import tkinter, os
-
-class InvalidFormatError(Exception): pass
-
-#CHAN_DICT = {"ELEV":"elev", "CURR":"curr", "FREQ":"freq",
-#	"EXCI":"exci", "OMEG":"omeg", "AMPL":"ampl", "PHAS":"phas"}
-#
-#for key, val in CHAN_DICT.items():
-#    globals()[key] = val
-#    globals()[key + 'B'] = val + 'b'
-
-## multiples
-#NM = 10e-9  # nano
-
-UNKNOWN = "unknown"
-
-# forward scan channels
-ELEV = "elev"   # Z
-CURR = "curr"   # Current
-FREQ = "freq"   # Frequency Shift
-EXCI = "exci"   # Excitation
-OMEG = "omeg"   # LIY_1_omega
-AMPL = "ampl"   # Amplitude
-PHAS = "phas"   # Phase
-ZREL = "zrel"   # Z rel
-CHAN_IDENT = (ELEV, CURR, FREQ, EXCI, OMEG, AMPL, PHAS, ZREL)
-
-# backward scan channels
-ELEVB = "elevb"   # Z backward
-CURRB = "currb"   # Current backward
-FREQB = "freqb"   # Frequency Shift backward
-EXCIB = "excib"   # Excitation backward
-OMEGB = "omegb"   # LIY_1_omega backward
-AMPLB = "amplb"   # Amplitude backward
-PHASB = "phasb"   # Phase backward
-ZRELB = "zrelb"   # Z rel backward
-CHAN_IDENT += (ELEVB, CURRB, FREQB, EXCIB, OMEGB, AMPLB, PHASB, ZRELB)
-
-def is_backward_scan(chan):
-    """decides whether string 'chan' denotes backward scan
-    """
-    
-    return chan.endswith('b')
-    
-def get_backward_scan(chan):
-    """returns name of the backward-scan version of channel 'chan'
-    """
-    
-    return chan + 'b'
-
-def get_forward_scan(chan):
-    """returns name of the forward-scan version of channel 'chan',
-    assumes that chan is a backward-scan
-    """
-    
-    return chan[:-1]
-
-# file format suffixes
-SUFFIXES = ("sxm",)
-
-# units
-UNITS = {ELEV:"m", CURR:"A", FREQ:"Hz", EXCI:"V", OMEG:"V?", AMPL:"m", PHAS:"deg", ZREL:"m",
-ELEVB:"m", CURRB:"A", FREQB:"Hz", EXCIB:"V", OMEGB:"V?", AMPLB:"m", PHASB:"deg", ZRELB:"m",
-UNKNOWN:"?"
-}
+from spm_data_layer import *
+from scipy.ndimage import map_coordinates
 
 
-def find_offind(indi, array, tolerancy):
-    """finds appropriate offind by skipping initial NaNs
-    
-    indi - initial offind
-    array - array with respect to which to find offind
-    tolerancy - how big difference between initial and
-        final offind is allowed
+"""module containing loading routines for SPMdata structure
+"""
+
+def load_data(spmdata, paths=(), suffixes=SUFFIXES, key=None, finer=True):
+    """loads data from external files
+
+    paths - name of the file or tuple of filenames storing
+        the data;
+        if 'paths' is evaluated to False, then a graphical
+        window is shown for choosing files to be loaded;
+        if 'paths'='cwd', then current working directory is
+        used to exctract files from;
+        if 'paths' contains a string with file name, then
+        this file is loaded;
+        if 'paths' contains a string with a directory name,
+        then all valid files from that directory are loaded;
+        if 'paths' is a sequence of strings containing file
+        names, then all valid files with these file names are
+        loaded
+    suffixes - relevant format suffixes
+    key - function evaluated for each layer, according to
+    	outputs of this function the loaded layers are
+    	embedded into 3D arrays, if None, then sorting
+    	according to heights is used
+    finer - if data resolution for individual layers differs,
+        three situations may happen:
+        if finer=None, then no resampling is performed;
+        if finer=True, then data with lower resolution are
+        upsampled so that they can be added to data with higher
+        resolution;
+        if finer=False, then data with higher resolution are
+        downsampled so that they can be added to data with lower
+        resolution;
+        each layer contains attributes horstep and verstep, which
+        represent data resolution in x- and y-direction; these
+        attributes should not be modified, since they express
+        resolution of the original data
     """
 
-    flag = False
-    for line in array:
-        for i, item in enumerate(line):
-            if not np.isnan(item):
-                res = i
-                flag = True
-                break
-        if flag: break
+    # if 'paths' is None, than loading window is opened,
+    # otherwise 'paths' stores filenames
+    if not paths:
+        root = tkinter.Tk()
+        root.withdraw()
+        validnames = tkinter.filedialog.askopenfilenames(
+            parent=root)
     else:
-        print("find_offind: Whole array full of NaNs.")
-        res = -1
+        validnames = _process_filenames(suffixes, paths)
+        
+    # check whether filenames are valid
+    validnames = _check_filenames(validnames, suffixes)
+    
+    # if a lot of files to be loaded, warn user that it might
+    # take a long time
+    if len(validnames) > 15:
+        print("load_data: {} files to be loaded.".format(
+            len(validnames)))
+        
+    # if no file to be loaded, halt
+    if len(validnames) == 0:
+        print("load_data: No file to be loaded.")
+        return
 
-    if abs(res - indi) > tolerancy:
-        print("find_offind: Too big difference between offinds: final - initial = {}.".format(res - indi))
-#        res = indi
+	# load individual files
+    spmdata.layers = [None]*len(validnames)
+    for i, name in enumerate(validnames):
+        spmdata.layers[i] = SPMdataLayer(name)
 
-    return res
+    # create 3D arrays in SPMdata
+    _embed_layers(spmdata, finer, key)
 
-def get_offinds_corr(arr1, arr2):            
-    """return argmax indices of cross-correlation array, which is
-    calculated by fft
+    # statistics
+    namelen = len(validnames)
+    print("load_data: In total {} file{} loaded{}".format(
+            namelen, "s" if namelen != 1 else "",
+            "." if namelen == 0 else ":"))
+    for i, name in enumerate(validnames):
+        print("\tFile {:2}: {}".format(i + 1, name))
+
+def _embed_layers(spmdata, finer=None, key=None):
+    """create 3D-arrays corresponding to each channel by
+    retrieving data from all layers, unknown values are
+    represented by NANs
+    
+    finer - if True, then layer data with lower resolution
+        are upsampled; if False layer data with higher
+        resolution are downsampled; if None, then no
+        resampling is performed
+    key - key for sorting the layers
     """
-    corrarr = np.fft.ifftn(np.fft.fftn(arr1)*np.conj(np.fft.fftn(arr2)))        
-    corrarr = np.roll(corrarr, int(np.floor(corrarr.shape[0] / 2)), axis=0)
-    corrarr = np.roll(corrarr, int(np.floor(corrarr.shape[1] / 2)), axis=1)
-    relx, rely = np.unravel_index(np.argmax(corrarr), corrarr.shape)
 
-    return relx, rely
+    # in order to prevent data manipulation as much as
+    # possible, tolerancy parameter is introduced;
+    # if tolerancy were zero, then all data in all layers
+    # would be resampled due to 'finer' parameter and
+    # round-off errors for versteps and horsteps; by
+    # suitable choice of tolerancy, the upsampling/down-
+    # sampling is performed only for those layers, whose
+    # verstep and/or horstep is different from the global
+    # verstep and horstep more then value of 'tolerancy'
+    tolerancy = 2
 
-def count_nans(array):
-    """counts how many NaNs are present in 'array'
+    # implicit sorting of layers is according to heights
+    key = (lambda x: x.height) if key is None else key
+
+    # sort layers
+    spmdata.layers.sort(key=key)
+
+    # resolution in x- and y-direction
+    horsteps = [lay.horstep for lay in spmdata.layers]
+    versteps = [lay.verstep for lay in spmdata.layers]
+    
+    # do not resample?
+    if finer is None:
+        # do not care about possibly different data
+        # resolution
+        
+        horstep, verstep = None, None
+        xnums = [lay.xnum for lay in spmdata.layers]
+        ynums = [lay.ynum for lay in spmdata.layers]
+    
+    # upsample or downsample?
+    else:
+        if finer:
+            horstep, verstep = min(horsteps), min(versteps)
+        else:
+            horstep, verstep = max(horsteps), max(versteps)        
+        
+        # adjust array dimensions to contain data with 
+        # possibly different resolution        
+        xnums = [int(lay.xran / horstep) for lay in spmdata.layers]
+        ynums = [int(lay.yran / verstep) for lay in spmdata.layers]
+        
+    # dimensions of new arrays
+    xnum, ynum = max(xnums), max(ynums)
+
+    # for which channels to allocate new arrays
+    chanlist = []
+    for lay in spmdata.layers:
+        chanlist.extend([chan for chan in lay.channels.keys()])
+
+    # save horizontal and vertical resolution for each channel
+    spmdata.horsteps = {chan:horstep for chan in set(chanlist)}
+    spmdata.versteps = {chan:verstep for chan in set(chanlist)}
+
+    # for each channel...
+    for chan in set(chanlist):
+        # create empty 3D array
+        arr = np.empty((spmdata.numlay, xnum, ynum))
+        arr.fill(np.nan)
+
+        # fill the array with valid data and update layers
+        for i, lay in enumerate(spmdata.layers):
+            if chan not in lay.channels.keys(): continue
+            
+            if abs(xnums[i] - lay.xnum) <= tolerancy and \
+                abs(ynums[i] - lay.ynum) <= tolerancy:
+                # if no resampling is necessary, use directly
+                # data from the layer
+                arrlay = lay.channels[chan]
+            else:
+                # otherwise resample the data
+#                print(("_embed_layers: Data from layer no. {}"
+#                    " resampled").format(i))
+                
+                xno, yno = lay.channels[chan].shape                
+                x = np.linspace(0, xno - 1, xnums[i])
+                y = np.linspace(0, yno - 1, ynums[i])
+                coords = np.meshgrid(x, y, indexing='ij')
+                arrlay = map_coordinates(lay.channels[chan],
+                    coords, order=0, cval=np.nan)
+            
+            # store data from layers to the array
+            arr[i, :xnums[i], :ynums[i]] = arrlay.copy()
+            lay.setchan(chan, arr[i])
+            
+        # save the array to the structure
+        spmdata.setchan(chan, arr)
+
+def _check_filenames(filenames, suffixes):
+    """check whether filenames are valid
     """
     
-    k = 0
-    for item in array:
-        if np.isnan(item): k += 1
-    print("count_nans: len, nans, len - nans: ", len(array), k, len(array) - k) 
+    sufx = tuple(suffixes)
 
-def vector_handedness(point1, point2, point3):
-    """ if vectors (point1 - point2) and (point3 - point2)
-    form a left-handed basis with vector (0, 0, -1), return
-    the right-handed counterpart of (point1, point2, point3),
-    otherwise return (point1, point2, point3)
+    valfilenames = []
+    for name in filenames:
+        if os.path.isfile(name) and name.endswith(sufx):
+            valfilenames.append(name)
+        else:
+            print(("_check_filenames: Name '{}' is not a "
+                "valid file name.").format(name))
+    return valfilenames 
+
+def _process_filenames(suffixes, pathnames='cwd'):
+    """process input file names
+
+    pathnames - variable containing file names, if left
+        unspecified, then the current working directory
+        is searched through
+    suffixes - format suffixes which should be loaded;
+        if None then files with all appropriate suffixes
+        are loaded
     """
-    
-    vec12 = point1 - point2
-    vec32 = point3 - point2
-    crossvec = np.cross(vec12, vec32)
 
-    rvec = np.array([0, 0, 1])
-    scalprod = np.dot(crossvec, rvec)      
-    print("scalprod: ", scalprod)
-              
-    if abs(scalprod) < 1e-9:
-        rvec = np.array([0, 1, 0])
-        scalprod = np.dot(crossvec, rvec)
-        if scalprod < 0:        
-            print("vector_handedness: Control points formed a left-hand basis,"
-                " so they were reordered.")
-            point3, point1 = point1, point3
-            crossvec *= -1    
-    elif scalprod < 0:
-        print("vector_handedness: Control points formed a left-hand basis,"
-            " so they were reordered.")
-        point3, point1 = point1, point3
-        crossvec *= -1    
-    
-    return point1, point2, point3, crossvec
+    try:
+        if pathnames == 'cwd':
+            # get files from the current working directory
+            pathnamesloc = {os.path.join(os.getcwd(), item)
+                for item in os.listdir(os.getcwd())}
+            print(("_process_filenames: Data read from the "
+               "current working directory: {}").format(
+               os.getcwd()))
+        elif isinstance(pathnames, str):
+            # if pathnames contains a name of a directory,
+            # load every file in that directory
+            if os.path.isdir(pathnames):
+                pathnamesloc = {os.path.join(pathnames, item)
+                    for item in os.listdir(pathnames)}
+                print(("_process_filenames: Data read from "
+                    "directory: {}").format(pathnames))
+            # if pathnames contains a name of a file, load that file
+            else:
+                pathnamesloc = set([pathnames])
+        elif all(map(lambda x: isinstance(x, str), pathnames)):
+            # if all items in pathnames are strings, get those
+            pathnamesloc = set(pathnames)
+        else:
+            raise TypeError
+    except TypeError:
+        print("_process_filenames: Invalid data file names.")
+        pathnamesloc = []
 
+    return pathnamesloc
 

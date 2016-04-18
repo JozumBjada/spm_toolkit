@@ -13,30 +13,95 @@ else:
 #    b.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration_inequal", key=lambda x: x.filename)
 #    b.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration/data_charged/lorange", key=lambda x: x.filename)
 
-    b.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/spm_data_3/1/test")#, key=lambda x: x.height)
+    b.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/spm_data_3/1/test", finer=True)#, key=lambda x: x.height)
+#    b.print_heights()
 
 #    b.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration/data_uncharged", key=lambda x: x.filename)
 #    b.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration/data_charged_2/", key=lambda x: x.filename)
 #    bb.load_data("/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration/data_charged/shrange", key=lambda x: x.filename)
     
-    
-    
-#    bb = a.copy(CURR, FREQ, CURRB)
-#    bb.align_corr_chan_fac(CURRB, FREQ, ichan=CURRB, downsample=True, fac=3, incr=True)#, show=False, rellay=range(5, 10), mislay=range(11, 21))
+    b.delete_channels(ELEV)
+
+    bb = b.copy()
+    b.add_layers([1,8,9,10])
+#    b.print_ranges()
+
+#    dd = b.copy(ll=[2, 40])    
+##    dd = SPMdata()
+#    dd.print_nums()
+#    dd.print_filenames()
+#    dd.print_ranges()
+#    dd.print_offsets()
+#    dd.print_offinds(FREQ)
+
+#    bb.align_correlate(CURRB, FREQ, ilay=0, show=False, ichan=CURRB, downsample=True, fac=3)#, show=False, rellay=range(5, 10), mislay=range(11, 21))
+
+    bb=stack_spm(bb, b, finer=None)
+
+#    bb.add_layers([1,8,9,10])
+
+#    bb.print_offinds(FREQ)
+
+#    for i, lay in enumerate(bb.layers):
+#        lay.xoffind = {}
+#        lay.yoffind = {}
+#        lay.rank = i
+#        
+#    bb.channels[FREQ][:, :50, :50] = np.nan
+#    bb.inspect_channels(FREQ, FREQB)
+#        
+#    bb.determine(hew=False)
+#    view=Cut2D()
+#    bb.view_channel(FREQ, view, key=lambda x: -x.rank)
+#    view.show_channels()
+
+#    bb.align_forback(CURR, FREQ, same=True)
+#    bb.align_offsets()
+
+#    bb.strip_nans(same=True)
+
+
+#    bb.inspect_channels(FREQ, FREQB)
+#    bb.align_correlate(CURRB, FREQ, ilay=0, show=True, ichan=CURRB, downsample=True, fac=3)#, show=False, rellay=range(5, 10), mislay=range(11, 21))
+##    bb.hew_nans()
+
+#    bb.show_layer(FREQ, CURR, ilay=0)
+#    bb.print_nums()
+#    print(bb.arrshape)
+        
+#    bb.inspect_channels(FREQ, FREQB, scaling=True)
+
+#    bb.inspect_channels(CURR, CURRB)
+
 #    
 
-    a=b.copy(FREQ, FREQB, CURR, CURRB)#, ll=range(10))
-    a.show_layer(FREQ,ilay=3)
-    
+#    a=b.copy(FREQ, FREQB, CURR)#, CURRB)#, ll=range(10))
+
 #    del b
 
-#    a.add_layers([1,8,9,10])
 
-    print(a.xoffinds)
-    a.align_corr_chan_fac(CURRB, FREQ, ichan=CURRB, downsample=True, fac=3)#, show=False, rellay=range(5, 10), mislay=range(11, 21))
+#    print(a.xoffinds)
+##    a.align_corr_chan_fac(FREQB, FREQ, ichan=CURRB, downsample=True, fac=3)#, show=False, rellay=range(5, 10), mislay=range(11, 21))
+#    b.align_forback()#ichan=CURR)#FREQ, AMPL, CURR, same=True)#FREQ)
+#    b.print_channels()
+
+##    b.print_nums()
+#    print(bb.arrshape)
+
+#    b.inspect_channels(AMPL, AMPLB)
+#    b.inspect_channels(FREQ, FREQB)
+#    b.inspect_channels(CURR, CURRB)
+#    b.inspect_channels(PHAS, PHASB)
+#    b.inspect_channels(ELEV, ELEVB)
 
 
-    a.inspect_channels(FREQ)
+#    aa=a.copy()
+
+#    aa.inspect_channels(FREQ, FREQB)
+#    a.average_channels((FREQ,))
+##    a.show_layer(FREQ,ilay=3)
+#    inspect_channels([bb, b, b],[FREQ, FREQ, FREQB])
+#    a.inspect_channels(FREQ)
     
     
 #    ADHOC = "ahoj"
@@ -64,21 +129,6 @@ else:
 #    aa.print_nums()
 #    
 ##    print("aa.layers: ", aa.layers)
-#    
-##    for i, lay in enumerate(aa):
-###        lay.height = -i
-##        setattr(aa, "layers[{}].height".format(i), i)
-#        
-#    for i in range(len(aa)):
-##        print("i = ", i)
-#        aa.layers[i].height = 50-i
-##        print("HA: ", aa.layers[i].height)
-
-##    for i in range(len(aa)):
-##        print("HA: ", aa.layers[i].height)
-##        
-##    for i, lay in enumerate(aa):
-##        print("lay.height: ", lay.height)
 #    
 ##    view = Cut2D()            
 ##    a.view_channel(FREQ, view, key=lambda x: -x.height)
@@ -134,8 +184,6 @@ else:
 ##    c.inspect_channels(FREQ, ADHOC, rangelayer='all', cutlist=cl)
 ##    inspect_channels([bb,c],[FREQ, ADHOC])
 
-##    c.insp(FREQ, ADHOC, rangelayer='all', cutlist=cl, cutzlist=clz)
-
 #    print("cl, clz: ", cl, clz)
 #    
 ##    help(SPMdata)
@@ -169,8 +217,10 @@ else:
 
 ##    a.align_forback(ilay=0, same=True)
 
-#    cutlist, cutzlist = [], []
+    cutlist, cutzlist = [], []
 ##    a.align_forback(FREQ, PHAS, EXCI, CURR, ichan=FREQ, ilay=0, pad=True)
+
+    bb.inspect_channels(FREQ, FREQB, cutlist=cutlist, cutzlist=cutzlist, scaling=False)
 
 
 ##    a.inspect_channels(FREQ, ADHOC, cutlist=cutlist, cutzlist=cutzlist, rangelayer=2)
@@ -194,7 +244,7 @@ else:
 #        
 #    cutlist = [[[0, 9, 15], [26.510958704009717, 74.315435667310027, 116.46257807874049], [4.3459164566023674, 110.98667275934925, 14.529118649968126]], [[0, 9, 15], [26.510958704009717, 74.315435667310027, 116.46257807874049], [4.3459164566023674, 110.98667275934925, 14.529118649968126]]]
 
-##    a.inspect_channels(FREQ, FREQB, cutlist=cutlist, cutzlist=cutzlist)#, interp='bilinear')
+
 #    a.inspect_channels(PHAS, PHASB, cutlist=cutlist, cutzlist=cutzlist)#, interp='bilinear')
 #    a.inspect_channels(EXCI, EXCIB, cutlist=cutlist, cutzlist=cutzlist)#, interp='bilinear')
 #    a.inspect_channels(CURR, CURRB, cutlist=cutlist, cutzlist=cutzlist)#, interp='bilinear')
@@ -208,14 +258,14 @@ else:
 ####    print("min, max: ", min(e.channels[FREQ]), max(e.channels[FREQ]))
 #    e.show_channels(FREQ, CURR)
 
-#    print("2D CUTS")
+##    print("2D CUTS")
 #    ff=Cut2D()
-#    ff.create_cutzxy(a, *cutlist[0], interpolate=1, align=True, delta=0.5, entire=True)
-##    ff.rotate(10)
-##    ff.create_cut_rotate(a, *cutlist[0])
-####    ff.create_cut(a, cutlist)
+#    ff.create_cutzxy(bb, *cutlist[0], interpolate=1, align=True, delta=0.5, entire=True)
+###    ff.rotate(10)
+###    ff.create_cut_rotate(a, *cutlist[0])
+#####    ff.create_cut(a, cutlist)
 
-#    ff.show_channels(FREQ, CURR, rescale=True)
+##    ff.show_channels(FREQ, CURR, rescale=True)
 #    ff.strip_nans(ref=FREQ)
 #    ff.show_channels(FREQ, CURR, rescale=True)
 #    

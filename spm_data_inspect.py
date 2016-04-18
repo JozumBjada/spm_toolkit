@@ -1,17 +1,25 @@
-from spm_data_load import *
+from spm_data_base import *
 from mpl_toolkits.axes_grid1 import make_axes_locatable    
-import math
+import matplotlib.ticker as tck
 
-"""this module implements procedure "inspect_channels", all the other routines in this file are auxiliary routines for the main procedure "inspect_channels"
+
+"""this module implements procedure "inspect_channels",
+all the other routines in this file are auxiliary routines
+for the main procedure "inspect_channels"
 """
 
 # initialize graphics
 def _initialize_plots(arrs, unitdir, vextr, layer, interpolation,
-    xind, yind, linestyle, linecolor, pointcolor, size, aspect, cuts, numl):
-    """initialize main plot, cut plots, horizontal and vertical lines and text
+    xind, yind, linestyle, linecolor, pointcolor, size, aspect,
+    cuts, numl, rightlim, bottolim):
+    """initialize main plot, cut plots, horizontal and vertical
+    lines and text
     
-    arrs - dictionary of channels, i.e. arrs={chan:array, ...}
-    unitdir - dictionary of corresponding units, i.e. unitdir={chan:units[chan]}
+    arrs - list of channels, i.e.
+        #arrs={(i, id(spmdata), chan):array, ...}
+        arrs = [(id(spmdata), chan, array), ...]
+    unitdir - dictionary of corresponding units, i.e.
+        unitdir={(i, id(spmdata), chan):units[chan]}
     vextr - dictionary of (min, max) values
     layer - initial layer to be drawn
     interpolation - interpolation order for imshow
@@ -23,10 +31,15 @@ def _initialize_plots(arrs, unitdir, vextr, layer, interpolation,
     aspect - aspect of cut images
     cuts - data for cuts
     numl - number of layers
+    rightlim, bottolim - real dimensions of the arrays;
+        if None, then no scaling is used
     """
 
     # create figure and layout
-    fig, subfiglist = plt.subplots(1, len(arrs), num="Channel: " + ", ".join(arrs))
+    chanlist = [chan for (idnum, chan, val) in arrs]
+    fig, subfiglist = plt.subplots(1, len(arrs),
+        num="Channel: " + ", ".join(chanlist),
+        squeeze=True)
     if len(arrs) == 1: subfiglist = [subfiglist]
 
     # create auxiliary lists
@@ -38,32 +51,66 @@ def _initialize_plots(arrs, unitdir, vextr, layer, interpolation,
     zcu1list, zcu2list, zcu3list = [], [], []
     tex1list, tex2list = [], []
 
-    # create subfigures, all created in a single row
-    for i, (chan, val) in enumerate(arrs.items()):
-        vmin, vmax = vextr[chan]
+    iddict, k = {}, 0
+    numxticks, numyticks = 6, 10
 
+    # create subfigures, all created in a single row
+    for i, (idnum, chan, val) in enumerate(arrs):
+        key = (idnum, chan)
+        vmin, vmax = vextr[key]
+
+        x, y = xind, yind
+
+        # identification number of given SPMdata
+        # structure
+        if idnum not in iddict:
+            iddict[idnum] = k
+            k += 1
+        idnum = iddict[idnum]
+            
         # main image
         axes1 = subfiglist[i]
         divider = make_axes_locatable(axes1)
         axes1.set_adjustable('box-forced')
-
-        imag1 = axes1.imshow(val[layer], aspect=(val[layer].shape[1] / val[layer].shape[0]),
-                    vmin=vmin, vmax=vmax, interpolation=interpolation, origin='lower')
-        vlin1 = axes1.axvline(x=xind, ls=linestyle, c=linecolor)
-        hlin1 = axes1.axhline(y=yind, ls=linestyle, c=linecolor)
+        extent = (0, val[layer].shape[0], val[layer].shape[1], 0)
+#        extent = (0, val[layer].shape[0], 0, val[layer].shape[1])
+#        extent = None
+        imag1 = axes1.imshow(val[layer], extent=extent,
+            vmin=vmin, vmax=vmax, interpolation=interpolation,
+            origin='lower')            
+        vlin1 = axes1.axvline(x=x, ls=linestyle, c=linecolor)
+        hlin1 = axes1.axhline(y=y, ls=linestyle, c=linecolor)
         poin1, = axes1.plot([], [], ls=linestyle, c=linecolor, lw=2)
-        zcut1, = axes1.plot([], [], ls='', marker='o', c=pointcolor, lw=2)
+        zcut1, = axes1.plot([], [], ls='', marker='o', lw=2, 
+            c=pointcolor)
         plt.setp(axes1.get_xticklabels(), visible=False)
+
+        # physical dimension labels
+        if rightlim is not None and bottolim is not None:
+            xticks = np.linspace(0, val[layer].shape[0] - 1, numxticks)
+            yticks = np.linspace(0, val[layer].shape[1] - 1, numyticks)
+            xticklabels = np.linspace(0, rightlim[key], numxticks)
+            yticklabels = np.linspace(0, bottolim[key], numyticks)
+            yticklabels = ["{:.4}".format(i) for i in yticklabels]
+            
+            axes1.set_xticks(xticks)
+            axes1.set_yticks(yticks)
+            axes1.set_xticklabels(xticklabels)
+            axes1.set_yticklabels(yticklabels)
        
         # side cut
-        axes2 = divider.append_axes("right", size=size, pad=0.2, sharey=axes1)
+        axes2 = divider.append_axes("right", size=size, pad=0.2,
+            sharey=axes1)
         axes2.set_adjustable('box-forced')
-        hlin2 = axes2.axhline(y=yind, ls=linestyle, c=linecolor)
+        hlin2 = axes2.axhline(y=y, ls=linestyle, c=linecolor)
         vlin2 = axes2.axvline(x=layer, ls=linestyle, c=linecolor)
         poin2, = axes2.plot([], [], ls=linestyle, c=linecolor, lw=2)
-        zcut2 = axes2.axhline(y=-1, ls=linestyle, c=pointcolor) # TODO: y=0 sucks!
-        imag2 = axes2.imshow(cuts[chan][0], aspect=aspect, vmin=vmin, vmax=vmax,
-                    interpolation=interpolation)
+        zcut2 = axes2.axhline(y=-1, ls=linestyle, c=pointcolor)
+        extent = (0, numl, val[layer].shape[1], 0)
+#        extent = None
+        imag2 = axes2.imshow(cuts[key][0], vmin=vmin, vmax=vmax,
+            interpolation=interpolation, aspect=aspect,
+            extent=extent)
         axes2.xaxis.set_ticks([0, numl // 2, numl - 1])
         plt.setp(axes2.get_yticklabels(), visible=False)
 
@@ -73,23 +120,28 @@ def _initialize_plots(arrs, unitdir, vextr, layer, interpolation,
         plt.colorbar(imag1, cax=axes5)
         
         # bottom cut
-        axes3 = divider.append_axes("bottom", size=size, pad=0.2, sharex=axes1)
+        axes3 = divider.append_axes("bottom", size=size, pad=0.2,
+            sharex=axes1)
         axes3.set_adjustable('box-forced')
-        vlin3 = axes3.axvline(x=xind, ls=linestyle, c=linecolor)
+        vlin3 = axes3.axvline(x=x, ls=linestyle, c=linecolor)
         hlin3 = axes3.axhline(y=layer, ls=linestyle, c=linecolor)
         poin3, = axes3.plot([], [], ls=linestyle, c=linecolor, lw=2)
-        zcut3 = axes3.axvline(x=-1, ls=linestyle, c=pointcolor) # TODO: x=0 sucks!
-        imag3 = axes3.imshow(cuts[chan][1], aspect=aspect, vmin=vmin, vmax=vmax,
-                    interpolation=interpolation)
+        zcut3 = axes3.axvline(x=-1, ls=linestyle, c=pointcolor)
+        extent = (0, val[layer].shape[0], numl, 0)
+#        extent = None
+        imag3 = axes3.imshow(cuts[key][1], vmin=vmin, vmax=vmax,
+            interpolation=interpolation, aspect=aspect,
+            extent=extent)
         axes3.yaxis.set_ticks([0, numl // 2, numl - 1])
         
         # metadata
         axes4 = divider.append_axes("top", size=0.9)
         axes4.set_axis_off()
 
-        text0 = axes4.text(0, .9, "Channel: " + chan)
+        text0 = axes4.text(0, .9, "SPM: {} \nChannel: {}".format(idnum, chan))
         text1 = axes4.text(0, .7, _str_num_layer(layer, numl))
-        text2 = axes4.text(0, .5, _str_value_at_cursor(val[layer], unitdir[chan], xind, yind))
+        text2 = axes4.text(0, .5,
+            _str_value_at_cursor(val[layer], unitdir[key], xind, yind))
 
         # update lists        
         ver1list.append(vlin1); ver2list.append(vlin2); ver3list.append(vlin3)
@@ -119,11 +171,17 @@ def _str_num_layer(layer, numl):
 
 # string pertaining to the value at cursor position
 def _str_value_at_cursor(chanarr, chanunit, xind, yind):
-    # TODO: MOZNA PREHOZENE xind A yind???
+
     if xind is None or yind is None:
         val = 0
     else:
-        val = chanarr[xind, yind]
+        # TODO: MOZNA PREHOZENE xind A yind???
+#        val = chanarr[xind, yind]
+
+        # for origin='lower' in imshow we have to reverse it [???]:
+#        val = chanarr[xind, -yind - 1]
+        val = chanarr[-xind - 1, yind]
+        
     return "value: {:.5g} {}".format(val, chanunit)
 
 # function for creation z-direction cuts
@@ -133,10 +191,10 @@ def _create_cuts(chanarr, ind1, ind2):
     """
     
 #    ind1, ind2 = ind2, ind1 # ???
-    cut1 = chanarr[:, ind1]
+    cut1 = chanarr[:, -ind1 - 1]
     cut2 = chanarr[:, :, ind2]
     
-    return cut2.transpose(), cut1 # !!!
+    return cut2.transpose()[::-1], cut1 # !!!
 
 # event handler for choosing a point through which z-cut is to be done
 class _CutZedPoint:
@@ -272,7 +330,8 @@ class _CutArbPoint:
         
 # event handler for motion between layers
 class _MoveCutsVer:
-    def __init__(self, fig, axes, arrs, xind, yind, layer, unitdir, t2, t1, imglist, v2, h3, numl, rangelayer):
+    def __init__(self, fig, axes, arrs, xind, yind, layer, unitdir,
+        t2, t1, imglist, v2, h3, numl, rangelayer):
         self.imglist, self.arrs = imglist, arrs
 
         self.xind, self.yind = xind, yind
@@ -296,20 +355,22 @@ class _MoveCutsVer:
             text.set_text(_str_num_layer(self.layer[0], self.numl))
             
         # update value at cursor
-        for text, (chan, val) in zip(self.t2, self.arrs.items()):
-            xind = -1 if self.xind[0] > val.shape[1] else self.xind[0]
-            yind = -1 if self.yind[0] > val.shape[2] else self.yind[0]
-            text.set_text(_str_value_at_cursor(val[self.layer[0]], self.unitdir[chan], xind, yind))
+        for text, (idnum, chan, val) in zip(self.t2, self.arrs):
+            key = (idnum, chan)
+            xind = -1 if self.xind[0] >= val.shape[1] else self.xind[0]
+            yind = -1 if self.yind[0] >= val.shape[2] else self.yind[0]
+            text.set_text(_str_value_at_cursor(
+                val[self.layer[0]], self.unitdir[key], xind, yind))
 
         # adjust scaling of values for given layer
-        if self.rangelayer == 'each':
-            for img, (chan, val) in zip(self.imglist, self.arrs.items()):              
+        if self.rangelayer == 'each':     
+            for img, (idnum, chan, val) in zip(self.imglist, self.arrs):              
                 imgdata = val[self.layer[0]]
                 img.set_data(imgdata)
                 img.set_clim(vmin=np.nanmin(imgdata))
                 img.set_clim(vmax=np.nanmax(imgdata))
-        else:
-            for img, (chan, val) in zip(self.imglist, self.arrs.items()):              
+        else:          
+            for img, (idnum, chan, val) in zip(self.imglist, self.arrs):   
                 img.set_data(val[self.layer[0]])
 
         # update lines in cut images marking the layer position
@@ -321,7 +382,8 @@ class _MoveCutsVer:
 
 # event handler for motion within a single layer
 class _MoveCutsHor:
-    def __init__(self, fig, axes, arrs, xind, yind, layer, unitdir, t2, img2, img3, lines):
+    def __init__(self, fig, axes, arrs, xind, yind, layer,
+        unitdir, t2, img2, img3, lines):
         self.t2, self.arrs, self.xind, self.yind = t2, arrs, xind, yind
         self.vl, self.hl, self.hl2, self.vl3 = lines
         self.img2, self.img3 = img2, img3
@@ -342,12 +404,13 @@ class _MoveCutsHor:
             self.yind[0] = math.floor(event.xdata)  # BEWARE! yind vs. xdata
         
         # update value at cursor and cuts
-        for text, img2, img3, (chan, val) in zip(self.t2, self.img2, self.img3, self.arrs.items()):
-            xind = -1 if self.xind[0] > val.shape[1] else self.xind[0]
-            yind = -1 if self.yind[0] > val.shape[2] else self.yind[0]
+        for text, img2, img3, (idnum, chan, val) in zip(self.t2, self.img2, self.img3, self.arrs):
+            key = (idnum, chan)
+            xind = -1 if self.xind[0] >= val.shape[1] else self.xind[0]
+            yind = -1 if self.yind[0] >= val.shape[2] else self.yind[0]
         
             # update value at cursor
-            text.set_text(_str_value_at_cursor(val[self.layer[0]], self.unitdir[chan], xind, yind))
+            text.set_text(_str_value_at_cursor(val[self.layer[0]], self.unitdir[key], xind, yind))
         
             # update cuts
             cuts = _create_cuts(val, xind, yind)
@@ -371,86 +434,116 @@ class _MoveCutsHor:
         self.fig.canvas.draw()
 
 # main procedure
-def inspect_channels(spmdatalist, chanlist, cutlist=None, cutzlist=None, layer=0, xind=None, yind=None,
-    rangelayer='all', linestyle='-', linecolor='w', pointcolor='g', aspect='auto',
-    size="30%", interpolation='none'):
+def inspect_channels(spmdatalist, chanlist, cutlist=None, cutzlist=None,
+    layer=0, xind=None, yind=None, rangelayer='all', linestyle='-',
+    linecolor='w', pointcolor='g', aspect='auto', size="30%",
+    interpolation='none', scaling=True):
     """show one or more channels for various SPMData structures
     together with its cuts 
 
     spmdatalist - list of SPMData structures used for plotting
-    chanlist - list of channels to be drawn; for each index 'i' channel chanlist[i]
-        is shown for SPMData structure spmdatalist[i]
-    cutlist - list into which cut control points are stored; if None, then nothing
-        is stored, otherwise after each selection is made by mouse and saved by ctrl+p
-        new triple [zpos, xpos, ypos] is appended to cutlist so that these data are
-        accessible even after the termination of inspect_channels routine
-    cutzlist - list into which z-cut points are stored, if None, then nothing is stored,
-        otherwise after each selection is made by mouse right-button new double
-        [xpos, ypos] is appended to cutzlist so that these data are accesssible
-        even after the termination of inspect_channels routine
-    layer - which layer of all the channels in chanlist to draw at the beginning, layer
-        is identical for all channels in chanlist
+    chanlist - list of channels to be drawn; for each index 'i'
+        channel chanlist[i] is shown for SPMData structure
+        spmdatalist[i]
+    cutlist - list into which cut control points are stored;
+        if None, then nothing is stored, otherwise after each
+        selection is made by mouse and saved by ctrl+p new
+        triple [zpos, xpos, ypos] is appended to cutlist so
+        that these data are accessible even after the
+        termination of inspect_channels routine
+    cutzlist - list into which z-cut points are stored;
+        if None, then nothing is stored, otherwise after each
+        selection is made by mouse right-button new double
+        [xpos, ypos] is appended to cutzlist so that these
+        data are accesssible even after the termination of
+        inspect_channels routine
+    layer - which layer of all the channels in chanlist to
+        draw at the beginning, layer is identical for all 
+        channels in chanlist
     xind, yind - initial position of the intersection point
     linestyle - format specification of the intersecting lines
     linecolor - color specification of the intersecting lines
-    pointcolor - color specification of the z-cut points and corresponding lines
-    rangelayer - which layer to choose for image min and max determination;
+    pointcolor - color specification of the z-cut points and
+        corresponding lines
+    rangelayer - which layer to choose for image min and max
+        determination;
         if 'all', then global minima and maxima are used;
-        if 'each', then maxima and minima are determined independently for each layer;
-        if rangelayer is not a valid number of a layer, then 'layer' is used instead
+        if 'each', then maxima and minima are determined
+        independently for each layer;
+        if rangelayer is not a valid number of a layer,
+        then 'layer' is used instead
     aspect - aspect of the cuts in the figure
     size - relative size of cuts in the figure
     interpolation - how to interpolate values in imshow
+    scaling - if True, then image labels are chosen
+        to correspond to real physical dimensions of the data;
+        if False, then array indices are used instead
     """
 
     # if 'chanlist' contains invalid channels, halt
     for spmdata, chan in zip(spmdatalist, chanlist):
         if chan not in spmdata.channels.keys():
-            print("inspect_channels: Invalid or absent channel '{}'.".format(chan))
+            print(("inspect_channels: Invalid or absent"
+                " channel '{}'.").format(chan))
             return
 
     # if 'layer' out of valid range, halt
     numl = min([spmdata.numlay for spmdata in spmdatalist])
     if -numl > layer or layer >= numl:
-        print("inspect_channels: Invalid layer number {}.".format(layer))
+        print(("inspect_channels: Invalid layer number"
+            " {}.").format(layer))
         return
-            
-#        # if layers do not have the same shape, halt
-#        if len(set(self.nums)) > 1:
-#            print("inspect_channels: Unequal layer dimensions.")
-#            return
 
     # create image data and dic. of corresponding units
-    arrs = {chan:spmdata.channels[chan] for spmdata, chan in zip(spmdatalist, chanlist)}
-    unitdir = {chan:spmdata.units[chan] for spmdata, chan in zip(spmdatalist, chanlist)}
+    arrs = [(id(spmdata), chan, spmdata.channels[chan])
+        for spmdata, chan in zip(spmdatalist, chanlist)]
+    unitdir = {(id(spmdata), chan):spmdata.units[chan]
+        for spmdata, chan in zip(spmdatalist, chanlist)}
+        
+    # real physical limits as labels for the image
+    if scaling:
+        rightlim = {(id(spmdata), chan):(
+            spmdata.horsteps[chan] * spmdata.channels[chan].shape[1])
+            for spmdata, chan in zip(spmdatalist, chanlist)}
+        bottolim = {(id(spmdata), chan):(
+            spmdata.versteps[chan] * spmdata.channels[chan].shape[2])
+            for spmdata, chan in zip(spmdatalist, chanlist)}
+    else:
+        rightlim = None
+        bottolim = None
     
     # image limits
-    xlim = min([val.shape[1] for val in arrs.values()])
-    ylim = min([val.shape[2] for val in arrs.values()])
+    xlim = min([val.shape[1] for idnum, chan, val in arrs])
+    ylim = min([val.shape[2] for idnum, chan, val in arrs])
 
     # initial position of the point of intersection
     if xind is None or -xlim > xind or xind >= xlim: xind = xlim // 2
     if yind is None or -xlim > yind or yind >= ylim: yind = ylim // 2
 
     # create initial cuts
-    cuts = {chan: _create_cuts(val, xind, yind) for chan, val in arrs.items()}
+    cuts = {(idnum, chan): _create_cuts(val, xind, yind)
+        for idnum, chan, val in arrs}
 
     # determine min and max
     if rangelayer == 'all':
-        vextr = {chan: (np.nanmin(val), np.nanmax(val)) for chan, val in arrs.items()}
+        vextr = {(idnum, chan): (np.nanmin(val), np.nanmax(val))
+            for idnum, chan, val in arrs}
     elif rangelayer == 'each':
-        vextr = {chan: (None, None) for chan in arrs}
+        vextr = {(idnum, chan): (None, None)
+            for idnum, chan, val in arrs}
     else:
         if -numl > rangelayer or rangelayer >= numl:
             print("inspect_channels: Invalid rangelayer number.")
             return
-        vextr = {chan:(np.nanmin(val[rangelayer]), np.nanmax(val[rangelayer]))
-                    for chan, val in arrs.items()}
+        vextr = {(idnum, chan):(
+            np.nanmin(val[rangelayer]), np.nanmax(val[rangelayer]))
+            for idnum, chan, val in arrs}
 
     # create figure and layout    
     fig, axes, lines, imgs, texs, pois, zcus = _initialize_plots(
         arrs, unitdir, vextr, layer, interpolation, xind, yind,
-        linestyle, linecolor, pointcolor, size, aspect, cuts, numl)
+        linestyle, linecolor, pointcolor, size, aspect, cuts, numl,
+        rightlim, bottolim)
     
     layer = [layer] # layer, now the LIST, is shared by handlers
     xind, yind = [xind], [yind] # ...and similarly for xind and yind

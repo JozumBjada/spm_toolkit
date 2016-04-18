@@ -1,5 +1,5 @@
 #from spm_data_struct import *
-from spm_data_load import *
+from spm_data_base import *
 from scipy.ndimage import map_coordinates
 
 class Cut1D:

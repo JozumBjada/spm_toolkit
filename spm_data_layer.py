@@ -1,4 +1,4 @@
-from spm_data_load import *
+from spm_data_base import *
 
 class InvalidFormatError(Exception): pass
 
@@ -8,17 +8,25 @@ class SPMdataLayer:
 
     def __init__(self, filename=None):
 
+        # number of data points in x- and y-direction
         self.xnum, self.ynum = 0, 0
+        
+        # height of the probe 
         self.height = None
+        
+        # resolution of the data, i.e. (data range) / (number of data points)
+        self.horstep, self.verstep = 0, 0
 
         # self.channels = {"nameOfTheChannel, e.g. ELEV":pointerToChan, ...}
         self.channels = {}
 
-#        self.elev, self.curr, self.freq, self.exci, self.omeg = None, None, None, None, None
-#        self.ampl, self.phas = None, None
-
+        # offsets in real physical dimensions
         self.xoffset, self.yoffset = None, None
+        
+        # corresponding offsets in terms of number of data points
         self.xoffind, self.yoffind = {}, {}
+        
+        # ranges of probed surface field
         self.xran, self.yran = None, None
 
         self.filename = ""
@@ -36,7 +44,8 @@ class SPMdataLayer:
         
         copylay = SPMdataLayer()
         itemlist = ["xnum", "ynum", "xran", "yran", "height",
-            "xoffset", "yoffset", "filename", "metadata"]
+            "xoffset", "yoffset", "filename", "metadata",
+            "horstep", "verstep"]
         # more universal would be to use itemlist=locals() or
         # something like that, but the explicit form used above
         # makes it clear what is actually copied
@@ -65,7 +74,6 @@ class SPMdataLayer:
             return
             
         del self.channels[chan]
-#        del self.shapes[chan]
         del self.xoffind[chan]
         del self.yoffind[chan]
         
@@ -96,6 +104,10 @@ class SPMdataLayer:
 #        etc.
         else:
             print("load_data: Unknown data format.")
+            
+        # data resolution
+        self.horstep = self.xran / self.xnum
+        self.verstep = self.yran / self.ynum
 
     def _load_data_nanonis(self, filename):
         """load data from nanonis format file
