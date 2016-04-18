@@ -8,5 +8,7 @@ List of files:
 * **spm_data_cut2d.py** - Cut2D class code
 * **spm_data_cut1d.py** - Cut1D class code
 * **spm_data_1d.py** - LineData class code
-* **spm_data_load.py** - auxiliary constants, variables, routines
+* **spm_data_align.py** - routines for alignment and their auxiliary subroutines
+* **spm_data_load.py** - load_data routine and its auxiliary subroutines
+* **spm_data_base.py** - auxiliary constants, variables, routines
 * **spm_data_test.py** - testing script
