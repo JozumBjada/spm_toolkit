@@ -1,5 +1,5 @@
 from spm_data_layer import *
-from scipy.ndimage import map_coordinates
+#from scipy.ndimage import map_coordinates
 
 
 """module containing loading routines for SPMdata structure
@@ -35,7 +35,7 @@ def load_data(spmdata, paths=(), suffixes=SUFFIXES, key=None, finer=True):
         if finer=False, then data with higher resolution are
         downsampled so that they can be added to data with lower
         resolution;
-        each layer contains attributes horstep and verstep, which
+        each layer contains attributes xstep and ystep, which
         represent data resolution in x- and y-direction; these
         attributes should not be modified, since they express
         resolution of the original data
@@ -97,11 +97,11 @@ def _embed_layers(spmdata, finer=None, key=None):
     # possible, tolerancy parameter is introduced;
     # if tolerancy were zero, then all data in all layers
     # would be resampled due to 'finer' parameter and
-    # round-off errors for versteps and horsteps; by
+    # round-off errors for ysteps and xsteps; by
     # suitable choice of tolerancy, the upsampling/down-
     # sampling is performed only for those layers, whose
-    # verstep and/or horstep is different from the global
-    # verstep and horstep more then value of 'tolerancy'
+    # ystep and/or xstep is different from the global
+    # ystep and xstep more then value of 'tolerancy'
     tolerancy = 2
 
     # implicit sorting of layers is according to heights
@@ -111,29 +111,35 @@ def _embed_layers(spmdata, finer=None, key=None):
     spmdata.layers.sort(key=key)
 
     # resolution in x- and y-direction
-    horsteps = [lay.horstep for lay in spmdata.layers]
-    versteps = [lay.verstep for lay in spmdata.layers]
+    xsteps = [lay.xstep for lay in spmdata.layers]
+    ysteps = [lay.ystep for lay in spmdata.layers]
     
     # do not resample?
     if finer is None:
         # do not care about possibly different data
         # resolution
         
-        horstep, verstep = None, None
+#        xstep, ystep = None, None
+        
+        # when array does not contain consistent data
+        # (in terms of data resolution), then xsteps
+        # and ysteps for spmdata are chosen as minima
+        # of xsteps and ysteps over all layers
+        xstep, ystep = min(xsteps), min(ysteps)
         xnums = [lay.xnum for lay in spmdata.layers]
         ynums = [lay.ynum for lay in spmdata.layers]
     
     # upsample or downsample?
     else:
         if finer:
-            horstep, verstep = min(horsteps), min(versteps)
+            xstep, ystep = min(xsteps), min(ysteps)
         else:
-            horstep, verstep = max(horsteps), max(versteps)        
+            xstep, ystep = max(xsteps), max(ysteps)        
         
         # adjust array dimensions to contain data with 
         # possibly different resolution        
-        xnums = [int(lay.xran / horstep) for lay in spmdata.layers]
-        ynums = [int(lay.yran / verstep) for lay in spmdata.layers]
+        xnums = [int(lay.xran / xstep) for lay in spmdata.layers]
+        ynums = [int(lay.yran / ystep) for lay in spmdata.layers]
         
     # dimensions of new arrays
     xnum, ynum = max(xnums), max(ynums)
@@ -144,8 +150,8 @@ def _embed_layers(spmdata, finer=None, key=None):
         chanlist.extend([chan for chan in lay.channels.keys()])
 
     # save horizontal and vertical resolution for each channel
-    spmdata.horsteps = {chan:horstep for chan in set(chanlist)}
-    spmdata.versteps = {chan:verstep for chan in set(chanlist)}
+    spmdata.xsteps = {chan:xstep for chan in set(chanlist)}
+    spmdata.ysteps = {chan:ystep for chan in set(chanlist)}
 
     # for each channel...
     for chan in set(chanlist):
@@ -166,14 +172,11 @@ def _embed_layers(spmdata, finer=None, key=None):
                 # otherwise resample the data
 #                print(("_embed_layers: Data from layer no. {}"
 #                    " resampled").format(i))
-                
-                xno, yno = lay.channels[chan].shape                
-                x = np.linspace(0, xno - 1, xnums[i])
-                y = np.linspace(0, yno - 1, ynums[i])
-                coords = np.meshgrid(x, y, indexing='ij')
-                arrlay = map_coordinates(lay.channels[chan],
-                    coords, order=0, cval=np.nan)
-            
+
+                xno, yno = lay.channels[chan].shape                               
+                arrlay = gen_resample_data_2d(lay.channels[chan],
+                    xno, yno, xnums[i], ynums[i])
+
             # store data from layers to the array
             arr[i, :xnums[i], :ynums[i]] = arrlay.copy()
             lay.setchan(chan, arr[i])

@@ -33,7 +33,7 @@ def _showfit_align(numlay, coefs, fac, xn, yn, xoffmin, yoffmin):
 
     return xfit, yfit
     
-def _show_align(numlay, rellay, revactlay, mislay,
+def _show_align(numlay, fitll, revactlay, misll,
     xoffind, yoffind, xfit, yfit, xcoefs, ycoefs, coefs):
     """show alignments in procedures align_corr_chan and align_correlate
     """
@@ -62,23 +62,23 @@ def _show_align(numlay, rellay, revactlay, mislay,
 
     # if there are layers whose offsets are to be inter-/extra-polated
     # plot control points, calculated points and fits
-    if mislay:
+    if misll:
         # manual setting?
         manstrx = "" if xcoefs is None else " (manual)"
         manstry = "" if ycoefs is None else " (manual)"
                 
         # plot reference points used for fitting
         if xcoefs is None:
-            ax.plot(rellay, xfit[rellay], "bo",
+            ax.plot(fitll, xfit[fitll], "bo",
                 label="x control points", markersize=10)
         if ycoefs is None:        
-            ax.plot(rellay, yfit[rellay], "go",
+            ax.plot(fitll, yfit[fitll], "go",
                 label="y control points", markersize=10)
 
         # plot inter-/extra-polated points
-        ax.plot(mislay, xoffind[mislay], "bv",
+        ax.plot(misll, xoffind[misll], "bv",
             label="x calculated points", markersize=10)
-        ax.plot(mislay, yoffind[mislay], "gv",
+        ax.plot(misll, yoffind[misll], "gv",
             label="y calculated points", markersize=10)
 
         # plot fits
@@ -91,74 +91,74 @@ def _show_align(numlay, rellay, revactlay, mislay,
     plt.show()
     
 
-def _preprocess_align(numlay, ichan, actlayi, mislayi, rellayi,
-    xcoefs, ycoefs, nlay=None, rnlay=None):
+def _preprocess_align(numlay, rchan, actlayi, mislayi, rellayi,
+    xcoefs, ycoefs, alay=None, ilay=None):
     """preprocessing stage of procedure align_correlate
     """
 
     # reference channel
-    if ichan is None:
+    if rchan is None:
         print("align_correlate: No reference channel specified.")
         raise InvalidInputError
 
     # active layers
     if actlayi is None:
-        actlay = range(numlay)
+        actll = range(numlay)
     else:
-        actlay = {lay % numlay for lay in actlayi}
-    actlay = sorted(list(actlay))                  
+        actll = {lay % numlay for lay in actlayi}
+    actll = sorted(list(actll))                  
                 
-    if not actlay:
+    if not actll:
         print("align_correlate: No layer to be aligned.")
         raise InvalidInputError
     
     # nonactive layers
-    revactlay = [lay for lay in range(numlay) if lay not in actlay]
+    revactlay = [lay for lay in range(numlay) if lay not in actll]
     
     # reference layer for (non)active layers
-    nlay = actlay[-1] if nlay is None or nlay not in actlay else nlay
+    alay = actll[-1] if alay is None or alay not in actll else alay
     if revactlay:
-        rnlay = revactlay[0] if rnlay is None or rnlay in actlay else rnlay
+        ilay = revactlay[0] if ilay is None or ilay in actll else ilay
     else:
-        rnlay = None
-    print("align_correlate: Active layers: {}".format(actlay))
-    print("align_correlate: nlay, rnlay: {}, {}".format(nlay, rnlay))
+        ilay = None
+    print("align_correlate: Active layers: {}".format(actll))
+    print("align_correlate: alay, ilay: {}, {}".format(alay, ilay))
 
-    # if there are layers to fit, preprocess mislay and rellay
+    # if there are layers to fit, preprocess misll and fitll
     if mislayi == 'all':
-        mislay = list(range(numlay))
+        misll = list(range(numlay))
     else:
-        mislay = mislayi
+        misll = mislayi
     
-    rellay = ()
-    if mislay:
-        mislay = list({lay % numlay for lay in mislay})
+    fitll = ()
+    if misll:
+        misll = list({lay % numlay for lay in misll})
         
         # if at least one manual alignment coefficient is not given
-        # use fitting by rellay
+        # use fitting by fitll
         if xcoefs is None or ycoefs is None:
             if not rellayi:
-                rellay = [lay for lay in range(numlay) if lay not in mislay]            
+                fitll = [lay for lay in range(numlay) if lay not in misll]            
             else:
-                rellay = list({lay % numlay for lay in rellayi})
-                mislay = [lay for lay in mislay if lay not in rellay]
-            rellay = sorted(rellay)
+                fitll = list({lay % numlay for lay in rellayi})
+                misll = [lay for lay in misll if lay not in fitll]
+            fitll = sorted(fitll)
 
-        mislay = sorted(mislay)
+        misll = sorted(misll)
         
-        print("align_correlate: Refer. layers: {}".format(rellay))
-        print("align_correlate: Missi. layers: {}".format(mislay))
+        print("align_correlate: Refer. layers: {}".format(fitll))
+        print("align_correlate: Missi. layers: {}".format(misll))
 
-    return actlay, revactlay, mislay, rellay, nlay, rnlay
+    return actll, revactlay, misll, fitll, alay, ilay
 
 
-def _corr_align(numlay, ichan, actlay, rellay, mislay, ilay, arr):
+def _corr_align(numlay, rchan, actll, fitll, misll, rlay, arr):
     """cross-correlation stage of procedure align_correlate
     """
     
-    print("align_correlate: Alignment according to channel '{}'.".format(ichan))
+    print("align_correlate: Alignment according to channel '{}'.".format(rchan))
     relx, rely = np.zeros(numlay), np.zeros(numlay)
-    arr1, k = arr[ilay], 1        
+    arr1, k = arr[rlay], 1        
     
     if arr1 is None:
         print("align_correlate: Reference layer in reference channel full of NaNs. Halt.")
@@ -166,14 +166,14 @@ def _corr_align(numlay, ichan, actlay, rellay, mislay, ilay, arr):
 
     arr1[np.isnan(arr1)] = np.nanmean(arr1)
     
-    # for each layer in actlay or rellay find out the most matching offsets
-    arlist = sorted([lay for lay in range(numlay) if lay in actlay or lay in rellay])
+    # for each layer in actll or fitll find out the most matching offsets
+    arlist = sorted([lay for lay in range(numlay) if lay in actll or lay in fitll])
     
     print("align_correlate: Cross-correlation:")
     for i in arlist:
         print("\tLayer {:2} out of {} being processed...".format(k, len(arlist)))
         k += 1
-        if mislay and i in mislay: continue
+        if misll and i in misll: continue
 
         # evaluate correlation and get indices of the best correlation match
         arrtemp, arr1tem = arr[i], arr1
@@ -190,7 +190,7 @@ def _corr_align(numlay, ichan, actlay, rellay, mislay, ilay, arr):
     
     return relx, rely
 
-def _fit_align(xcoefs, ycoefs, mislay, rellay, relx, rely):
+def _fit_align(xcoefs, ycoefs, misll, fitll, relx, rely):
     """fitting stage of procedure align_correlate
     """
 
@@ -199,35 +199,35 @@ def _fit_align(xcoefs, ycoefs, mislay, rellay, relx, rely):
     xfit, yfit = None, None
 
     # inter-/extra-polation
-    if mislay:
+    if misll:
         # find linear fit
         from scipy.stats import linregress
             
         if xcoefs is None:
-            acoefx, bcoefx = linregress(rellay, relx[rellay])[:2]                
+            acoefx, bcoefx = linregress(fitll, relx[fitll])[:2]                
         else:
             acoefx, bcoefx = xcoefs
 
         if ycoefs is None:
-            acoefy, bcoefy = linregress(rellay, rely[rellay])[:2]                
+            acoefy, bcoefy = linregress(fitll, rely[fitll])[:2]                
         else:
             acoefy, bcoefy = ycoefs
    
-        # calculate offsets for layers in mislay
-        for i in mislay:
+        # calculate offsets for layers in misll
+        for i in misll:
             relx[i] = acoefx*i + bcoefx
             rely[i] = acoefy*i + bcoefy
 
     return relx, rely, acoefx, bcoefx, acoefy, bcoefy
     
-def _postprocess_align(spmdata, ichan, relx, rely, fac, revactlay, actlay, nlay, rnlay):
+def _postprocess_align(spmdata, rchan, relx, rely, fac, revactlay, actll, alay, ilay):
     """postprocessing stage of procedure align_correlate
     """
     
     xn, yn = np.array(spmdata.xnums), np.array(spmdata.ynums)
-    xo = np.array([lay.xoffind[ichan] if ichan in lay.channels.keys() else 0
+    xo = np.array([lay.xoffind[rchan] if rchan in lay.channels.keys() else 0
         for lay in spmdata.layers])
-    yo = np.array([lay.yoffind[ichan] if ichan in lay.channels.keys() else 0
+    yo = np.array([lay.yoffind[rchan] if rchan in lay.channels.keys() else 0
         for lay in spmdata.layers])
 
     # offsets        
@@ -242,9 +242,9 @@ def _postprocess_align(spmdata, ichan, relx, rely, fac, revactlay, actlay, nlay,
     if revactlay:
         print("align_correlate: Nonactive layer offsets may be affected.")
         # now we set xoffind and yoffind of all channels to values of
-        # xoffind and yoffind of the ichan channel
-        xoffind[revactlay] = fac * xo[revactlay] + xoffind[nlay] - fac * xo[rnlay]
-        yoffind[revactlay] = fac * yo[revactlay] + yoffind[nlay] - fac * yo[rnlay]
+        # xoffind and yoffind of the rchan channel
+        xoffind[revactlay] = fac * xo[revactlay] + xoffind[alay] - fac * xo[ilay]
+        yoffind[revactlay] = fac * yo[revactlay] + yoffind[alay] - fac * yo[ilay]
         
     # all offsets with respect to the array origin
     xoffmin, yoffmin = xoffind.min(), yoffind.min()
@@ -258,33 +258,39 @@ def _postprocess_align(spmdata, ichan, relx, rely, fac, revactlay, actlay, nlay,
     return xn, yn, xoffind, yoffind, xoffmin, yoffmin
 
 
-def _upsample_align(numlay, layers, ichan, fac, chanlist, order):
+def _upsample_align(numlay, layers, rchan, fac, chanlist, order):
     """upsample stage of procedure align_correlate
     """
     
     arrdict = {}
-    if ichan not in chanlist: chanlist.append(ichan)
+    if rchan not in chanlist: chanlist.append(rchan)
 
     # upsampling of channels in chanlist
     # assume that xnum and ynum is equal for all channels to xnum
     # and ynum of the reference channel for each layer
     for chan in chanlist:
-        print("align_correlate: Channel '{}' being upsampled.".format(chan))
         arrtmp = [None]*numlay
-                    
-        for i, lay in enumerate(layers):
-            if chan not in lay.channels.keys(): continue
-            
-            xno, yno = lay.channels[chan].shape                
-            x = np.linspace(0, xno - 1, fac * xno)
-            y = np.linspace(0, yno - 1, fac * yno)
-            coords = np.meshgrid(x, y, indexing='ij')
-            arrtmp[i] = map_coordinates(lay.channels[chan],
-                coords, order=order, cval=np.nan)                
+        
+        # for fac = 1 no upsampling is done
+        if fac > 1:
+            print("align_correlate: Channel '{}' being upsampled.".format(chan)) 
+            for i, lay in enumerate(layers):
+                if chan not in lay.channels.keys(): continue
+                
+                xno, yno = lay.channels[chan].shape                
+                x = np.linspace(0, xno - 1, fac * xno)
+                y = np.linspace(0, yno - 1, fac * yno)
+                coords = np.meshgrid(x, y, indexing='ij')
+                arrtmp[i] = map_coordinates(lay.channels[chan],
+                    coords, order=order, cval=np.nan)                
+        else:
+            for i, lay in enumerate(layers):
+                if chan not in lay.channels.keys(): continue
+                arrtmp[i] = lay.channels[chan]
         
         arrdict[chan] = arrtmp
 
-    return arrdict[ichan], arrdict
+    return arrdict[rchan], arrdict
     
    
 def _reallocate_align(spmdata, chanlist, xoffind, yoffind,
@@ -340,7 +346,7 @@ def _reallocate_align(spmdata, chanlist, xoffind, yoffind,
             lay.yoffind[chan] = math.floor(yoffind[i] / fac)
 
         # downsampling                    
-        if downsample:            
+        if downsample and fac > 1:            
             print(("align_correlate: Channel '{}' "
                 "being downsampled.").format(chan))
             x = np.linspace(0, aux.shape[1],
@@ -399,53 +405,55 @@ def _reallocate_align(spmdata, chanlist, xoffind, yoffind,
                 lay.xoffind[chan]:lay.xoffind[chan] + lay.xnum,
                 lay.yoffind[chan]:lay.yoffind[chan] + lay.ynum])
 
-def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
-    rnlay=None, actlay=None, rellay=None, mislay=None, show=False,
+def align_correlate(spmdata, *cl, rchan=None, rlay=0, alay=None,
+    ilay=None, actll=None, fitll=None, misll=None, show=False,
     xcoefs=None, ycoefs=None, fac=1, downsample=True, order=1):
-    """align arrays according to ichan channel, i.e. offsets are
-    calculated only once for ichan and then used multiple times
+    """align arrays according to rchan channel, i.e. offsets are
+    calculated only once for rchan and then used multiple times
     for all channels in cl, unknown values are represented by NANs,
     resulting array may have bigger dimensions than original arrays
     
     cl - list of channels to be aligned, if empty, then all
         channels are aligned
-    ilay - all layers are compared to fixed layer with index 'lay'
-    nlay - if actlay is not None or not all layers, then nlay
+    rlay - index of a fixed reference layer with which all layers
+        are compared
+    alay - if actll is not None or not all layers, then alay
         specifies to which layer inactive layers should adhere,
-        i.e. offind of rnlay layer will be set to the offind of nlay;
-        if nlay is None or lies outside actlay, then it is set
-        to be the last layer in actlay
-    rnlay - analog of nlay for inactive layers, if None or in 
-        actlay, then it is set to be the first layer not in actlay
-    ichan - all channels in cl are aligned according to channel ichan
-    actlay - list of 'active' layers, which are to be aligned;
+        i.e. offind of ilay layer will be set to the offind of alay;
+        if alay is None or lies outside actll, then it is set
+        to be the last layer in actll
+    ilay - analog of alay for inactive layers, if None or in 
+        actll, then it is set to be the first layer not in actll
+    rchan - reference channel; all channels in cl are aligned
+        according to channel 'rchan'
+    actll - list of 'active' layers, which are to be aligned;
         if None, then all layers are used
-    rellay - list of 'relevant' layers which are used to determine
-        offsets for layers in mislay, if None or empty, then
-        rellay is effectively put equal to all layers not lying in mislay
-    mislay - list of 'missing' layers for which offsets should
+    fitll - list of layers which are used to determine by fitting
+        offsets for layers in misll, if None or empty, then
+        fitll is effectively put equal to all layers not lying in misll
+    misll - list of 'missing' layers for which offsets should
         be calculated by inter-/extra-polation;
         if None or empty, then correlation calculation is performed
         for all layers and no inter-/extra-polation is used;
-        if mislay and rellay are not disjoint, then mislay is
-        put equal to mislay minus rellay;
-        if mislay='all', then all layers are used for 
+        if misll and fitll are not disjoint, then misll is
+        put equal to misll minus fitll;
+        if misll='all', then all layers are used for 
         inter-/extra-polation
-    show - if True, then plot depicting rellay points and
+    show - if True, then plot depicting fitll points and
         extrapolation trends is shown,
-        control points - rellay points
-        calculated points - mislay points
+        control points - fitll points
+        calculated points - misll points
         x fit, y fit - fit of x-offsets and y-offsets, respectively
         (manual) - shown if fit is set manually via xcoefs or ycoefs
         x offsets, y offsets - resulting x- and y-offsets
         red area - for this area no alignment is active,
-            i.e. corresponding layers do not lay in actlay
+            i.e. corresponding layers do not lay in actll
     xcoefs, ycoefs - linear and absolute coefficients for manual
         interpolation for x and y dimension, respectively;
         if not None, then these parameters are used instead of
         automatically calculated ones, in which case 
         xcoefs=(xlincoef, xabscoef) etc.;
-        if not None, then rellay is not used
+        if not None, then fitll is not used
     fac - upsampling factor
     downsample - whether to perform downsampling after correlation
     order - order of interpolation for resampling
@@ -461,32 +469,32 @@ def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
     Example 1: I have given SPMdata structure 'dta' with 30 layers. I want to align
         channels CURR and PHAS. As a reference channel I want to choose FREQ,
         as a reference layer I choose layer no. 3. That is, I write:
-        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, ilay=3)'.
+        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, rlay=3)'.
         But, from the result I see that cross-correlation does not work well for layers
         no. 10, 11, 12, 15, 16. I would like to use linear fit for offsets of these 
-        layers. So I append 'mislay=[10, 11, 12, 15, 16]' to argument list.
+        layers. So I append 'misll=[10, 11, 12, 15, 16]' to argument list.
         New result I obtain nevertheless does not fit offsets for these layers well.
-        Reason for this may be that offsets for layers outside 'mislay' vary a lot, so I
+        Reason for this may be that offsets for layers outside 'misll' vary a lot, so I
         would like to calculate a linear fit only from offsets pertaining to layers
-        no. 5, 6, 7. Thus I append 'rellay=[5, 6, 7]' to argument list and also set 
+        no. 5, 6, 7. Thus I append 'fitll=[5, 6, 7]' to argument list and also set 
         'show' to True to see how offsets are calculated. At the end I have
-        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, ilay=3, mislay=[10, 11, 12, 15, 16],
-            rellay=[5, 6, 7])'.
+        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, rlay=3, misll=[10, 11, 12, 15, 16],
+            fitll=[5, 6, 7])'.
             
     Example 2: Suppose I have given SPMdata structure as in Example 1. But now 
         I want to align according to layer no. 0, which is default choice. Now I would
         like to align only layers no. 10 through no. 29 and leave layers no. 0 through
-        no. 5 unaffected (i.e. layers no. 0 through no. 5 of channel 'ichan'! unaffected,
-        since routine 'align_corr_chan' aligns channels according to channel 'ichan', all
-        channels in 'cl' different from 'ichan' may get different offsets even
+        no. 5 unaffected (i.e. layers no. 0 through no. 5 of channel 'rchan'! unaffected,
+        since routine 'align_corr_chan' aligns channels according to channel 'rchan', all
+        channels in 'cl' different from 'rchan' may get different offsets even
         for layers no. 0 through no. 5). So I write:
-        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, actlay=range(6, 30), show=True,
-            mislay=range(10, 30))'.
+        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, actll=range(6, 30), show=True,
+            misll=range(10, 30))'.
         But, the resulting alignment is not good, so I read actual offsets used by
         routine from the plot shown and set fit coefficients for x-offsets by hand,
         so I write
-        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, actlay=range(6, 30), show=True,
-            mislay=range(10, 30), xcoefs=(5., 10.))'.        
+        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, actll=range(6, 30), show=True,
+            misll=range(10, 30), xcoefs=(5., 10.))'.        
     """
 
     chanlist = list(spmdata.channels if not cl else cl)
@@ -504,31 +512,31 @@ def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
 
     # layer lists initialization
     try:
-        actlay, revactlay, mislay, rellay, nlay, rnlay = _preprocess_align(
-            numlay, ichan, actlay, mislay, rellay, xcoefs, ycoefs, nlay, rnlay)
+        actll, revactlay, misll, fitll, alay, ilay = _preprocess_align(
+            numlay, rchan, actll, misll, fitll, xcoefs, ycoefs, alay, ilay)
     except InvalidInputError:
         return
 
     # upsampling        
-    arr, arrdict = _upsample_align(numlay, layers, ichan, fac, chanlist, order)
+    arr, arrdict = _upsample_align(numlay, layers, rchan, fac, chanlist, order)
    
     # cross-correlation     
     try:    
-        relx, rely = _corr_align(numlay, ichan, actlay, rellay, mislay, ilay, arr)
+        relx, rely = _corr_align(numlay, rchan, actll, fitll, misll, rlay, arr)
     except InvalidInputError:
         return
 
     # inter-/extra-polation
-    relx, rely, *coefs = _fit_align(xcoefs, ycoefs, mislay, rellay, relx, rely)
+    relx, rely, *coefs = _fit_align(xcoefs, ycoefs, misll, fitll, relx, rely)
 
     # postprocessing
     xn, yn, xoffind, yoffind, xoffmin, yoffmin = _postprocess_align(
-        spmdata, ichan, relx, rely, fac, revactlay, actlay, nlay, rnlay)
+        spmdata, rchan, relx, rely, fac, revactlay, actll, alay, ilay)
 
     # plotting - show trends and control points
     if show:
         xfit, yfit = _showfit_align(numlay, coefs, fac, xn, yn, xoffmin, yoffmin)
-        _show_align(numlay, rellay, revactlay, mislay,
+        _show_align(numlay, fitll, revactlay, misll,
                     xoffind, yoffind, xfit, yfit, xcoefs, ycoefs, coefs)
 
     # reallocation of arrays according to offsets and downsampling
@@ -626,37 +634,37 @@ def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
 #                xoffind[i]:xoffind[i] + xn[i],
 #                yoffind[i]:yoffind[i] + yn[i]]
 
-#def _upsample_align_trend(self, ichan, fac, order):
+#def _upsample_align_trend(self, rchan, fac, order):
 #    """upsample stage of procedure align_trend
 #    """
 #    
 #    # upsampling of reference channel
 #    arr = [None]*self.numlay
 
-#    print("align_correlate: Channel '{}' being upsampled.".format(ichan))
+#    print("align_correlate: Channel '{}' being upsampled.".format(rchan))
 #    for i, lay in enumerate(self.layers):        
-#        xno, yno = lay.channels[ichan].shape                
+#        xno, yno = lay.channels[rchan].shape                
 #        x = np.linspace(0, xno - 1, fac * xno)
 #        y = np.linspace(0, yno - 1, fac * yno)
 #        coords = np.meshgrid(x, y, indexing='ij')
-#        arr[i] = map_coordinates(lay.channels[ichan], coords, order=order)#, cval=np.nan) # cval!!!
+#        arr[i] = map_coordinates(lay.channels[rchan], coords, order=order)#, cval=np.nan) # cval!!!
 
 #    return arr
 
-#def _postprocess_align_trend(self, ichan, relx, rely, fac, revactlay, actlay):
+#def _postprocess_align_trend(self, rchan, relx, rely, fac, revactlay, actll):
 #    """postprocessing stage of procedure align_trend
 #    """
 #    
 #    xn, yn = np.array(self.xnums), np.array(self.ynums)
-#    xo = np.array([lay.xoffind[ichan] for lay in self.layers])
-#    yo = np.array([lay.yoffind[ichan] for lay in self.layers])
+#    xo = np.array([lay.xoffind[rchan] for lay in self.layers])
+#    yo = np.array([lay.yoffind[rchan] for lay in self.layers])
 
 #    # offsets        
 #    relx = relx - fac * xn / 2
 #    rely = rely - fac * yn / 2
 
-#    relx[revactlay] = relx[actlay].min()
-#    rely[revactlay] = rely[actlay].min()
+#    relx[revactlay] = relx[actll].min()
+#    rely[revactlay] = rely[actll].min()
 
 #    # reference offsets with respect to the array origin
 #    xoffind = relx - relx.min()
@@ -666,7 +674,7 @@ def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
 #    if revactlay:
 #        print("align_correlate: Nonactive layer offsets may be affected.")
 #        # now we set xoffind and yoffind of all channels to values of
-#        # xoffind and yoffind of the ichan channel
+#        # xoffind and yoffind of the rchan channel
 #        xoffind[revactlay] = fac * xo[revactlay]
 #        yoffind[revactlay] = fac * yo[revactlay]
 #        
@@ -680,35 +688,35 @@ def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
 
 #    return xn, yn, xoffind, yoffind, xoffmin, yoffmin
 #                
-#def align_trend(self, *cl, ichan=None, ilay=0, actlay=None, rellay=None, mislay=None, show=False,
+#def align_trend(self, *cl, rchan=None, rlay=0, actll=None, fitll=None, misll=None, show=False,
 #    xcoefs=None, ycoefs=None, fac=1, order=1):
-#    """align arrays according to ichan channel, i.e. offsets are calculated only once for ichan and then used
+#    """align arrays according to rchan channel, i.e. offsets are calculated only once for rchan and then used
 #    multiple times for all channels in cl, unknown values are represented by NANs,
 #    resulting array may have bigger dimensions than original arrays
 #    
 #    cl - list of channels to be aligned, if empty, then all channels are aligned
-#    ilay - all layers are compared to fixed layer with index 'lay'
-#    ichan - all channels in cl are aligned according to channel ichan
-#    actlay - list of 'active' layers, which are to be aligned, if None, then all layers are used
-#    rellay - list of 'relevant' layers which are used to determine offsets for layers in mislay,
-#        if None or empty, then rellay is effectively put equal to all layers not lying in mislay
-#    mislay - list of 'missing' layers for which offsets should be calculated by inter-/extra-polation,
+#    rlay - all layers are compared to fixed layer with index 'lay'
+#    rchan - all channels in cl are aligned according to channel rchan
+#    actll - list of 'active' layers, which are to be aligned, if None, then all layers are used
+#    fitll - list of 'relevant' layers which are used to determine offsets for layers in misll,
+#        if None or empty, then fitll is effectively put equal to all layers not lying in misll
+#    misll - list of 'missing' layers for which offsets should be calculated by inter-/extra-polation,
 #        if None or empty, then correlation calculation is performed for all layers and no 
-#        inter-/extra-polation is used, if mislay and rellay are not disjoint, then mislay is
-#        put equal to mislay minus rellay, if mislay='all', then all layers are used for
+#        inter-/extra-polation is used, if misll and fitll are not disjoint, then misll is
+#        put equal to misll minus fitll, if misll='all', then all layers are used for
 #        inter-/extra-polation
-#    show - if True, then plot depicting rellay points and extrapolation trends is shown,
-#        control points - rellay points
-#        calculated points - mislay points
+#    show - if True, then plot depicting fitll points and extrapolation trends is shown,
+#        control points - fitll points
+#        calculated points - misll points
 #        x fit, y fit - fit of x-offsets and y-offsets, respectively
 #        (manual) - shown if fit is set manually via xcoefs or ycoefs
 #        x offsets, y offsets - resulting x-offsets and y-offsets, respectively
 #        red area - for this area no alignment is active, i.e. corresponding layers do not
-#            lay in actlay
+#            lay in actll
 #    xcoefs, ycoefs - linear and absolute coefficients for manual interpolation for x and y
 #        dimension, respectively; if not None, then these parameters are used instead of
 #        automatically calculated ones, in which case xcoefs=(xlincoef, xabscoef) etc.;
-#        if not None, then rellay is not used
+#        if not None, then fitll is not used
 #    fac - upsampling factor
 #    order - order of interpolation for resampling
 #    
@@ -721,58 +729,58 @@ def align_correlate(spmdata, *cl, ichan=None, ilay=0, nlay=None,
 #    Example 1: I have given SPMdata structure 'dta' with 30 layers. I want to align
 #        channels CURR and PHAS. As a reference channel I want to choose FREQ,
 #        as a reference layer I choose layer no. 3. That is, I write:
-#        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, ilay=3)'.
+#        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, rlay=3)'.
 #        But, from the result I see that cross-correlation does not work well for layers
 #        no. 10, 11, 12, 15, 16. I would like to use linear fit for offsets of these 
-#        layers. So I append 'mislay=[10, 11, 12, 15, 16]' to argument list.
+#        layers. So I append 'misll=[10, 11, 12, 15, 16]' to argument list.
 #        New result I obtain nevertheless does not fit offsets for these layers well.
-#        Reason for this may be that offsets for layers outside 'mislay' vary a lot, so I
+#        Reason for this may be that offsets for layers outside 'misll' vary a lot, so I
 #        would like to calculate a linear fit only from offsets pertaining to layers
-#        no. 5, 6, 7. Thus I append 'rellay=[5, 6, 7]' to argument list and also set 
+#        no. 5, 6, 7. Thus I append 'fitll=[5, 6, 7]' to argument list and also set 
 #        'show' to True to see how offsets are calculated. At the end I have
-#        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, ilay=3, mislay=[10, 11, 12, 15, 16],
-#            rellay=[5, 6, 7])'.
+#        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, rlay=3, misll=[10, 11, 12, 15, 16],
+#            fitll=[5, 6, 7])'.
 #            
 #    Example 2: Suppose I have given SPMdata structure as in Example 1. But now 
 #        I want to align according to layer no. 0, which is default choice. Now I would
 #        like to align only layers no. 10 through no. 29 and leave layers no. 0 through
-#        no. 5 unaffected (i.e. layers no. 0 through no. 5 of channel 'ichan'! unaffected,
-#        since routine 'align_corr_chan' aligns channels according to channel 'ichan', all
-#        channels in 'cl' different from 'ichan' may get different offsets even
+#        no. 5 unaffected (i.e. layers no. 0 through no. 5 of channel 'rchan'! unaffected,
+#        since routine 'align_corr_chan' aligns channels according to channel 'rchan', all
+#        channels in 'cl' different from 'rchan' may get different offsets even
 #        for layers no. 0 through no. 5). So I write:
-#        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, actlay=range(6, 30), show=True,
-#            mislay=range(10, 30))'.
+#        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, actll=range(6, 30), show=True,
+#            misll=range(10, 30))'.
 #        But, the resulting alignment is not good, so I read actual offsets used by
 #        routine from the plot shown and set fit coefficients for x-offsets by hand,
 #        so I write
-#        'dta.align_corr_chan(CURR, PHAS, ichan=FREQ, actlay=range(6, 30), show=True,
-#            mislay=range(10, 30), xcoefs=(5., 10.))'.        
+#        'dta.align_corr_chan(CURR, PHAS, rchan=FREQ, actll=range(6, 30), show=True,
+#            misll=range(10, 30), xcoefs=(5., 10.))'.        
 #    """
 
 #    chanlist = list(self.channels if not cl else cl)
 #    chanlist = [chan for chan in chanlist if chan in self.channels]
 #    
 #    # layer lists initialization
-#    actlay, revactlay, mislay, rellay = self._preprocess_align(
-#                                ichan, actlay, mislay, rellay, xcoefs, ycoefs)
+#    actll, revactlay, misll, fitll = self._preprocess_align(
+#                                rchan, actll, misll, fitll, xcoefs, ycoefs)
 
 #    # upsampling        
-#    arr = self._upsample_align_trend(ichan, fac, order)
+#    arr = self._upsample_align_trend(rchan, fac, order)
 #   
 #    # cross-correlation         
-#    relx, rely = self._corr_align(ichan, actlay, rellay, mislay, ilay, arr)
+#    relx, rely = self._corr_align(rchan, actll, fitll, misll, rlay, arr)
 
 #    # inter-/extra-polation
-#    relx, rely, *coefs = self._fit_align(xcoefs, ycoefs, mislay, rellay, relx, rely)
+#    relx, rely, *coefs = self._fit_align(xcoefs, ycoefs, misll, fitll, relx, rely)
 
 #    # postprocessing
 #    xn, yn, xoffind, yoffind, xoffmin, yoffmin = self._postprocess_align_trend(
-#                                ichan, relx, rely, fac, revactlay, actlay)
+#                                rchan, relx, rely, fac, revactlay, actll)
 
 #    # plotting - show trends and control points
 #    if show:
 #        xfit, yfit = self._showfit_align_trend(coefs, fac, xn, yn, xoffmin, yoffmin)
-#        self._show_align(rellay, revactlay, mislay,
+#        self._show_align(fitll, revactlay, misll,
 #                    xoffind, yoffind, xfit, yfit, xcoefs, ycoefs, coefs)
 
 #    # reallocation of arrays according to offsets
@@ -828,20 +836,20 @@ def _get_shifts(layers, lay, chanf, chanb, xdir, ydir, same):
 
     return relx, rely
 
-def align_forback(spmdata, *cl, ichan=None, same=True, ilay=0, xdir=True, ydir=True, order=0):
-    """align all channels in 'cl' according to 'ichan' channel so that forward
+def align_forback(spmdata, *cl, rchan=None, same=True, rlay=0, xdir=True, ydir=True, order=0):
+    """align all channels in 'cl' according to 'rchan' channel so that forward
     and backward scans are moved towards each other and aligned 'to
     the centre', this routine does not align layers within one channel, but
     channels among themselves instead
     
     cl - sequence of channels to be aligned, if empty, than all
         channels are aligned
-    ichan - reference channel; if None, then each channel is aligned
+    rchan - reference channel; if None, then each channel is aligned
         independently
     same - if True, then resulting 3D arrays for all channels in cl are of the
         same dimensions; if False, then 3D arrays for forward and backward
         direction of each physical quantity have the same dimension
-    ilay - reference layer 
+    rlay - reference layer 
     xdir - if True, than allow shift in x-direction
     ydir - if True, than allow shift in y-direction
     order - order of interpolation during shifting
@@ -863,15 +871,15 @@ def align_forback(spmdata, *cl, ichan=None, same=True, ilay=0, xdir=True, ydir=T
     fyoffs, byoffs = [None]*len(cl), [None]*len(cl)
 
     # process reference channel
-    if ichan is None:
+    if rchan is None:
         pass
-    elif ichan in spmdata.channels.keys() and not is_backward_scan(ichan):
-        ichanb = get_backward_scan(ichan)
+    elif rchan in spmdata.channels.keys() and not is_backward_scan(rchan):
+        ichanb = get_backward_scan(rchan)
         if ichanb not in spmdata.channels.keys():
             print("align_forback: Reference channel has no backward counterpart.")
             return
         else:                
-            vecxi, vecyi = _get_shifts(spmdata.layers, ilay, ichan, ichanb, xdir, ydir, same)
+            vecxi, vecyi = _get_shifts(spmdata.layers, rlay, rchan, ichanb, xdir, ydir, same)
     else:
         print("align_forback: Invalid reference channel.")
         return
@@ -880,8 +888,8 @@ def align_forback(spmdata, *cl, ichan=None, same=True, ilay=0, xdir=True, ydir=T
     for i, chanf in enumerate(cl):
         chanb = get_backward_scan(chanf)
         
-        if ichan is None:
-            vecx[i], vecy[i] = _get_shifts(spmdata.layers, ilay, chanf, chanb, xdir, ydir, same)            
+        if rchan is None:
+            vecx[i], vecy[i] = _get_shifts(spmdata.layers, rlay, chanf, chanb, xdir, ydir, same)            
         else:
             vecx[i], vecy[i] = vecxi, vecyi
 
@@ -890,11 +898,11 @@ def align_forback(spmdata, *cl, ichan=None, same=True, ilay=0, xdir=True, ydir=T
         # properly aligned w.r.t. forward/backward!
         xlimf[i], ylimf[i] = spmdata.channels[chanf].shape[1:]
         xlimb[i], ylimb[i] = spmdata.channels[chanb].shape[1:]
-        fxoffs[i] = spmdata.layers[ilay].xoffind[chanf] 
-        bxoffs[i] = spmdata.layers[ilay].xoffind[chanb] 
-        fyoffs[i] = spmdata.layers[ilay].yoffind[chanf] 
-        byoffs[i] = spmdata.layers[ilay].yoffind[chanb] 
-#        xnum[i],  ynum[i]  = self.layers[ilay].xnum, self.layers[ilay].ynum
+        fxoffs[i] = spmdata.layers[rlay].xoffind[chanf] 
+        bxoffs[i] = spmdata.layers[rlay].xoffind[chanb] 
+        fyoffs[i] = spmdata.layers[rlay].yoffind[chanf] 
+        byoffs[i] = spmdata.layers[rlay].yoffind[chanb] 
+#        xnum[i],  ynum[i]  = self.layers[rlay].xnum, self.layers[rlay].ynum
     
     print("ylimf: ", ylimf)
     
@@ -907,7 +915,7 @@ def align_forback(spmdata, *cl, ichan=None, same=True, ilay=0, xdir=True, ydir=T
     if same:
         xlv, ylv = max(xlim), max(ylim)
         xlim, ylim = [xlv]*len(cl), [ylv]*len(cl) 
-        xnum,  ynum  = spmdata.layers[ilay].xnum, spmdata.layers[ilay].ynum
+        xnum,  ynum  = spmdata.layers[rlay].xnum, spmdata.layers[rlay].ynum
 
         #  TODO
 

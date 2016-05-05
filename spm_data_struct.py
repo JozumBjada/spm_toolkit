@@ -8,14 +8,13 @@ from spm_data_align import \
 
 import tkinter, os, math, pickle
 from mpl_toolkits.axes_grid1 import make_axes_locatable    
-from scipy.ndimage import map_coordinates
+#from scipy.ndimage import map_coordinates
 from scipy import signal
 
 """module containing SPMdata class with auxiliary routines
 """
 
-# TODO: stack_spm a mozna jeste neco by melo osetrit, zda maji vsechny vrstvy stejne rozliseni dat, tj. stejne velky krok na jeden index v x- a y-smeru; v load_data to je uz udelany, ale vubec to neni
-# odzkouseny
+# TODO: do 2d rezu vzit v uvahu i rozliseni v z-smeru
 
 def stack_spm(spm1, spm2, finer=True):
     """stack two SPMdata objects into a single SPMdata object
@@ -42,281 +41,121 @@ def stack_spm(spm1, spm2, finer=True):
         list(spm1.channels.keys()) + list(spm2.channels.keys())))
     numlay = spm1.numlay + spm2.numlay
     
-#    # create spmnew
-#    spmnew = SPMdata()
-#    spmnew.layers = [None]*numlay
-#    
-#    # add all channels from chanlist into spmnew:
-#    # if no resampling...
-#    if finer is None:
-#        for chan in chanlist:        
-#            # get dimensions of new array provided chan is in spm1
-#            if chan in spm1.channels:
-#                arrsh1x, arrsh1y = spm1.arrshape[chan]
-#            else:
-#                arrsh1x, arrsh1y = 0, 0
-#                print("stack_spm: The first SPMdata structure does "
-#                    "not contain channel '{}'".format(chan))
+    # create spmnew
+    spmnew = SPMdata()
+    spmnew.layers = [None]*numlay
+    
+    # add all channels from chanlist into spmnew:
+    for chan in chanlist:      
+        # if chan in both...
+        if chan in spm1.channels and chan in spm2.channels:        
+            # old dimensions of arrays for chan
+            n1xo, n1yo = spm1.arrshape[chan]
+            n2xo, n2yo = spm2.arrshape[chan]
 
-#            # get dimensions of new array provided chan is in spm2
-#            if chan in spm2.channels:
-#                arrsh2x, arrsh2y = spm2.arrshape[chan]
-#            else:
-#                arrsh2x, arrsh2y = 0, 0
-#                print("stack_spm: The second SPMdata structure does "
-#                    "not contain channel '{}'".format(chan))
-#                
-#            # allocate new array with appropriate dimensions
-#            arr = np.empty(
-#                (numlay, max(arrsh1x, arrsh2x), max(arrsh1y, arrsh2y)))
-#            arr.fill(np.nan)
-#            
-#            # fill new array with valid data from spm1
-#            if chan in spm1.channels:
-#                arr[i, :xnums[i], :ynums[i]] = arrlay.copy()            
+            # horizontal and vertical resolution
+            x1step = spm1.xsteps[chan]
+            x2step = spm2.xsteps[chan]
+            
+            y1step = spm1.ysteps[chan]
+            y2step = spm2.ysteps[chan]
+        
+            # if no resampling...
+            if finer is None:
+                xstep = min(x1step, x2step)
+                ystep = min(y1step, y2step)
 
-#            # fill new array with valid data from spm2
-#            if chan in spm2.channels:
-#                arr[len(spm1):, :arrsh2x, :arrsh2y] = spm2.channels[chan]
-#            
-#            # save new array into spmnew
-#            spmnew.setchan(chan, arr)
-#            
-#    # otherwise resample...
-#    else:
-#        for chan in chanlist:      
-#            # if chan in spm1 only...
-#            if chan in spm1.channels and chan not in spm2.channels:        
-#                print("stack_spm: The second SPMdata structure does "
-#                    "not contain channel '{}'".format(chan))
-#                arrsh1x, arrsh1y = spm1.arrshape[chan]
-#                
-#                # allocate new array with appropriate dimensions
-#                arr = np.empty((numlay, arrsh1x, arrsh1y)))
-#                arr.fill(np.nan)
-#                
-#                # fill new array with valid data from spm1
-#                if chan in spm1.channels:
-#                    arr[len(spm1):, :arrsh1x, :arrsh1y] = spm1.channels[chan]
+                # new array dimensions
+                n1x, n1y = n1xo, n1yo
+                n2x, n2y = n2xo, n2yo
+                                
+                # arrays to be stacked
+                arr1 = spm1.channels[chan]            
+                arr2 = spm2.channels[chan]                
+            else:
+                # if upsampling...
+                if finer:
+                    xstep = min(x1step, x2step)
+                    ystep = min(y1step, y2step)
+                # if downsampling...
+                else:
+                    xstep = max(x1step, x2step)
+                    ystep = max(y1step, y2step)
+                
+                # new array dimensions
+                n1x = int(n1xo * x1step / xstep)
+                n1y = int(n1yo * y1step / ystep)
 
-#                spmnew.units[chan] = spm1.units[chan]
-#                spmnew.horsteps[chan] = spm1.horsteps[chan]
-#                spmnew.versteps[chan] = spm1.versteps[chan]
-#                spmnew.channels_fb[chan] = spm1.channels_fb[chan]
-#            
-#            # if chan in spm2 only...
-#            if chan not in spm1.channels and chan in spm2.channels:        
-#                print("stack_spm: The first SPMdata structure does "
-#                    "not contain channel '{}'".format(chan))
-#                arrsh2x, arrsh2y = spm2.arrshape[chan]
+                n2x = int(n2xo * x2step / xstep)
+                n2y = int(n2yo * y2step / ystep)
 
-#                # allocate new array with appropriate dimensions
-#                arr = np.empty((numlay, arrsh2x, arrsh2y)))
-#                arr.fill(np.nan)
-#            
-#                # fill new array with valid data from spm2
-#                if chan in spm2.channels:
-#                    arr[len(spm1):, :arrsh2x, :arrsh2y] = spm2.channels[chan]
-#            
-#                spmnew.units[chan] = spm2.units[chan]
-#                spmnew.horsteps[chan] = spm2.horsteps[chan]
-#                spmnew.versteps[chan] = spm2.versteps[chan]
-#                spmnew.channels_fb[chan] = spm2.channels_fb[chan]
-#            
-#            # if chan in both...
-#            if chan in spm1.channels and chan in spm2.channels:        
-#                arrsh1x, arrsh1y = spm1.arrshape[chan]
-#                arrsh2x, arrsh2y = spm2.arrshape[chan]
-#            
-#        
-#            # TODO: osetrit pro ruzne data resolution
-#        
-#            self.versteps, self.horsteps
-#        
-#            # get dimensions of new array provided chan is in spm1
-#            if chan in spm1.channels:
-#                if spm1.horsteps[chan] is not None:
-#                
-#                if spm1.versteps[chan] is not None:
-#            
-#                arrsh1x, arrsh1y = spm1.arrshape[chan]
-#            else:
-#                arrsh1x, arrsh1y = 0, 0
-#                print("stack_spm: The first SPMdata structure does "
-#                    "not contain channel '{}'".format(chan))
+                # resampled arrays to be stacked
+                arr1 = gen_resample_data_3d(spm1.channels[chan],
+                    n1xo, n1yo, spm1.numlay,
+                    n1x,  n1y,  spm1.numlay)
+                arr2 = gen_resample_data_3d(spm2.channels[chan],
+                    n2xo, n2yo, spm2.numlay,
+                    n2x,  n2y,  spm2.numlay)
+                
+            # we assume that spm1 and spm2 have the same units
+            # for all channels they share
+            spmnew.units[chan] = spm2.units[chan]
+            spmnew.xsteps[chan] = xstep
+            spmnew.ysteps[chan] = ystep   
+                
+            # allocate new array with appropriate dimensions
+            xlim, ylim = max(n1x, n2x), max(n1y, n2y)
+            arr = np.empty((numlay, xlim, ylim))
+            arr.fill(np.nan)
+                        
+            # fill new array with valid data            
+            arr[:len(spm1), :n1x, :n1y] = arr1.copy()        
+            arr[len(spm1):, :n2x, :n2y] = arr2.copy()
+            
+        else:
+            # if chan in spm1 only...
+            if chan in spm1.channels:
+                print("stack_spm: The second SPMdata structure does "
+                    "not contain channel '{}'.".format(chan))    
+                spmaux = spm1
+                ranaux = slice(0, len(spm1))
+            else:
+                print("stack_spm: The first SPMdata structure does "
+                    "not contain channel '{}'.".format(chan))
+                spmaux = spm2
+                ranaux = slice(len(spm1), numlay)
+                
+            # new dimensions are equal to old dimensions
+            nx, ny = spmaux.arrshape[chan]
+            
+            # allocate new array with appropriate dimensions
+            arr = np.empty((numlay, nx, ny))
+            arr.fill(np.nan)
+            
+            # fill new array with valid data
+            arr[ranaux, :nx, :ny] = spmaux.channels[chan]
 
-#            # get dimensions of new array provided chan is in spm2
-#            if chan in spm2.channels:
-#                arrsh2x, arrsh2y = spm2.arrshape[chan]
-#            else:
-#                arrsh2x, arrsh2y = 0, 0
-#                print("stack_spm: The second SPMdata structure does "
-#                    "not contain channel '{}'".format(chan))
-#                
-#            # allocate new array with appropriate dimensions
-#            arr = np.empty(
-#                (numlay, max(arrsh1x, arrsh2x), max(arrsh1y, arrsh2y)))
-#            arr.fill(np.nan)
-#            
-#            
-#            
-#            
-#            
-#            
-#            
-#            
-#                
-#                
-#                
-#                if abs(xnums[i] - lay.xnum) <= tolerancy and \
-#                    abs(ynums[i] - lay.ynum) <= tolerancy:
-#                    # if no resampling is necessary, use directly
-#                    # data from the layer
-#                    arrlay = spm1.channels[chan]
-#                else:
-#                    # otherwise resample the data
-#    #                print(("_embed_layers: Data from layer no. {}"
-#    #                    " resampled").format(i))
-#                    
-#                    xno, yno = lay.channels[chan].shape                
-#                    x = np.linspace(0, xno - 1, xnums[i])
-#                    y = np.linspace(0, yno - 1, ynums[i])
-#                    coords = np.meshgrid(x, y, indexing='ij')
-#                    arrlay = map_coordinates(spm1.channels[chan],
-#                        coords, order=0, cval=np.nan)
-#                
-#                # store data from layers to the array       
-#                arr[:len(spm1), :arrsh1x, :arrsh1y] = arrlay.copy()
+            spmnew.units[chan] = spmaux.units[chan]
+            spmnew.xsteps[chan] = spmaux.xsteps[chan]
+            spmnew.ysteps[chan] = spmaux.ysteps[chan]
+            
+        # save new array into spmnew
+        spmnew.setchan(chan, arr)
+        
+    # update data for layers from spm1
+    for i, lay in enumerate(spm1.layers):
+        spmnew.layers[i] = lay.copy(i, spmnew.channels)
 
-#    #            arr[i, :xnums[i], :ynums[i]] = arrlay.copy()            
-#                
-#                
-#                
-#                
-#                
-#                
-#                
-#                
-#                
-#            
-#            
-#            
-#            arr[:len(spm1), :arrsh1x, :arrsh1y] = arr1.copy()        
-#            arr[len(spm1):, :arrsh2x, :arrsh2y] = arr2.copy()
-#            
-#            
-#            
-#            arr1 = spm1.channels[chan]
-#            
-#            # fill new array with valid data from spm1
-#            if chan in spm1.channels:
-
-#                
-#            arr2 = spm2.channels[chan]
-#                
-#            # fill new array with valid data from spm2
-#            if chan in spm2.channels:
-#            
-#            # save new array into spmnew
-#            spmnew.setchan(chan, arr)
-#            
-#    # update data for layers from spm1
-#    for i, lay in enumerate(spm1.layers):
-#        spmnew.layers[i] = lay.copy(i, spmnew.channels)
-
-#    # update data for layers from spm2
-#    for i, lay in enumerate(spm2.layers):
-#        spmnew.layers[i + len(spm1)] = lay.copy(
-#            i + len(spm1), spmnew.channels)
-#    
-#    print(("stack_spm: New SPMdata object has {} layers and "
-#        "channels: {}").format(spmnew.numlay,
-#        list(spmnew.channels.keys())))
-#    
-#    return spmnew
-
-#def stack_spm(spm1, spm2, finer=True):
-#    """stack two SPMdata objects into a single SPMdata object
-#    'spmnew' and return it
-#    
-#    spm1, spm2 - input SPMdata structures
-#    finer - if data resolution for spm1 and spm2 differs,
-#        three situations may happen:
-#        if finer=None, then no resampling is performed;
-#        if finer=True, then data with lower resolution are
-#        upsampled so that they can be added to data with higher
-#        resolution;
-#        if finer=False, then data with higher resolution are
-#        downsampled so that they can be added to data with lower
-#        resolution;
-#        each layer contains attributes horstep and verstep, which
-#        represent data resolution in x- and y-direction; these
-#        attributes should not be modified, since they express
-#        resolution of the original data 
-#    """
-#     
-#    # channels to be in spmnew and number of layers in spmnew
-#    chanlist = list(set(
-#        list(spm1.channels.keys()) + list(spm2.channels.keys())))
-#    numlay = spm1.numlay + spm2.numlay
-#    
-#    # create spmnew
-#    spmnew = SPMdata()
-#    spmnew.layers = [None]*numlay
-#    
-#    # add all channels from chanlist into spmnew
-#    for chan in chanlist:
-#    
-#        # TODO: osetrit pro ruzne data resolution
-#    
-#    #    self.versteps, self.horsteps !!!
-#    
-#        # get dimensions of new array provided chan is in spm1
-#        if chan in spm1.channels:
-#            arrsh1x, arrsh1y = spm1.arrshape[chan]
-#        else:
-#            arrsh1x, arrsh1y = 0, 0
-#            print("stack_spm: The first SPMdata structure does "
-#                "not contain channel '{}'".format(chan))
-
-#        # get dimensions of new array provided chan is in spm2
-#        if chan in spm2.channels:
-#            arrsh2x, arrsh2y = spm2.arrshape[chan]
-#        else:
-#            arrsh2x, arrsh2y = 0, 0
-#            print("stack_spm: The second SPMdata structure does "
-#                "not contain channel '{}'".format(chan))
-#            
-#        # allocate new array with appropriate dimensions
-#        arr = np.empty(
-#            (numlay, max(arrsh1x, arrsh2x), max(arrsh1y, arrsh2y)))
-#        arr.fill(np.nan)
-#        
-#        # fill new array with valid data from spm1
-#        if chan in spm1.channels:
-#            arr[:len(spm1), :arrsh1x, :arrsh1y] = spm1.channels[chan]
-#            
-#        # fill new array with valid data from spm2
-#        if chan in spm2.channels:
-#            arr[len(spm1):, :arrsh2x, :arrsh2y] = spm2.channels[chan]
-#        
-#        # save new array into spmnew
-#        spmnew.setchan(chan, arr)
-#        
-#    # update data for layers from spm1
-#    for i, lay in enumerate(spm1.layers):
-#        spmnew.layers[i] = lay.copy(i, spmnew.channels)
-
-#    # update data for layers from spm2
-#    for i, lay in enumerate(spm2.layers):
-#        spmnew.layers[i + len(spm1)] = lay.copy(
-#            i + len(spm1), spmnew.channels)
-#    
-#    print(("stack_spm: New SPMdata object has {} layers and "
-#        "channels: {}").format(spmnew.numlay,
-#        list(spmnew.channels.keys())))
-#    
-#    return spmnew
+    # update data for layers from spm2
+    for i, lay in enumerate(spm2.layers):
+        spmnew.layers[i + len(spm1)] = lay.copy(
+            i + len(spm1), spmnew.channels)
+    
+    print(("stack_spm: New SPMdata object has {} layers and "
+        "channels: {}").format(spmnew.numlay,
+        list(spmnew.channels.keys())))
+    
+    return spmnew
 
 def create_spm(paths=None, numlay=0):
     """create SPMdata structure with all necessary attributes
@@ -330,7 +169,8 @@ def create_spm(paths=None, numlay=0):
     spmdata = SPMdata(paths)
     if paths is None:
         if numlay < 0:
-            print("create_spm: Invalid number of layers: {}.".format(numlay))
+            print(("create_spm: Invalid number"
+                " of layers: {}.").format(numlay))
             del spmdata
             return
         spmdata.layers = [None]*numlay
@@ -343,22 +183,29 @@ def create_spm(paths=None, numlay=0):
     
     return spmdata
 
-def pickle_data(obj, filename):
-    """export data to external file by mechanism provided by pickle
+def pickle_data(spmdata, filename):
+    """export data to external file by mechanism provided by
+    pickle
+    
+    spmdata - SPMdata structure to export
+    filename - where to export the data
     """
     
     with open(filename, 'wb') as f:
         pickle.dump(obj, f)
 
 
-def unpickle_data(obj, filename):
-    """import data from external file by mechanism provided by pickle
+def unpickle_data(spmdatalist, filename):
+    """import data from external file by mechanism provided by
+    pickle
     
-    obj - list the first element of which will be assigned data from file
+    spmdatalist - list whose first element will be assigned data
+        from file
+    filename - where to import data from
     """
 
     with open(filename, 'rb') as f:
-        obj[0] = pickle.load(f)
+        spmdatalist[0] = pickle.load(f)
 
 class SPMdata:
     """class embracing all the relevant data for SPM images
@@ -366,29 +213,42 @@ class SPMdata:
     
     def __init__(self, paths=None):
     
+        # dictionary of channels
         # self.channels = {ELEV:self.elev (any scan), ...}
         self.channels = {}
-        # self.channels_fb = {ELEV:(self.elev (forward scan), self.elevb (backward scan), False (is averaged)), ...}
-        self.channels_fb = {}
-        # self.layers = [<SPMdataLayer object 1>, ...] (list of layers)
+        
+        # list of layers
+        # self.layers = [<SPMdataLayer object 1>, ...]
         self.layers = []
         
         # resolution of data in x- and y-direction for all channels
-        self.versteps, self.horsteps = {}, {}
+        self.ysteps, self.xsteps = {}, {}
         
-        # sequences of channel names and units; it is possible that each SPMdata structure has its
+        # dictionary of units for each channel
+        # it is possible that each SPMdata structure has its
         # own ad hoc channels with their own names and units
         self.units = UNITS
         
-        # BEWARE: self.layers[i].channels[chan] is a view of self.channels[chan][i, xoffind:xoffind + num, yoffind:yoffind + ynum];
-        # in other words, self.layers[i].channels[chan] points to the area of self.channels[chan][i] containing only valid data;
-        # in fact, after aligning it might be the case that valid data are padded by NANs in self.channels[chan][i]
+        # BEWARE: self.layers[i].channels[chan] is a view of
+        # self.channels[chan][i, 
+        #                     xoffind:xoffind + xnum,
+        #                     yoffind:yoffind + ynum
+        #                     ];
+        # in other words, self.layers[i].channels[chan] points
+        # to the area of self.channels[chan][i] containing only
+        # valid data; after aligning it might be the case that
+        # valid data are padded by NANs in self.channels[chan][i]
+        
+        # optional text description of the data stored in the
+        # structure
+        self.description = "--No description given yet.--"
         
         if paths is not None:
             self.load_data(paths)
         
     def __iter__(self):
-        """iterator over SPMdata structure is set to be iterator over its layers
+        """iterator over SPMdata structure is set to be iterator
+        over its layers
         """
         
         return iter(self.layers)
@@ -407,7 +267,8 @@ class SPMdata:
         """
         
         if chan not in self.channels.keys():
-            print("view_channel: Invalid channel '{}'.".format(chan))
+            print(("view_channel: Invalid channel '{}'."
+                ).format(chan))
             return
         
         if laylist is None: laylist = list(range(self.numlay))
@@ -433,61 +294,70 @@ class SPMdata:
         """delete layers specified by 'laylist'
         """
         
-        # list of layers to be preserved and list of channels to be deleted
-        complist = [i for i in range(self.numlay) if i not in laylist]
+        # list of layers to be preserved and list of channels
+        # to be deleted
+        complist = [i for i in range(self.numlay)
+            if i not in laylist]
         chandellist = []
         
         # leave only relevant layers
-        self.layers = [lay for i, lay in enumerate(self.layers) if i in complist] 
+        self.layers = [lay for i, lay in enumerate(self.layers)
+            if i in complist] 
                
         for chan, val in self.channels.items():
             # for each channel preserve only relevant layers
             arr = val[complist].copy()            
             
-            # update data for each layer
-            nonmissing = []
-            for i, lay in enumerate(self.layers):
-                # if chan is not present in the given layer, skip the layer
-                if complist[i] not in lay.channels.keys(): continue
-                    
-                # otherwise update the data pointer                
-                xoff, yoff = lay.xoffind[chan], lay.yoffind[chan]
-                xnum, ynum = lay.xnum, lay.ynum
-                lay.setchan(chan, arr[i, xoff:xoff + xnum, yoff:yoff + ynum])
-                nonmissing.append(i)
-                
-            # if chan is missing in all preserved layers, delete chan
-            if len(nonmissing) == 0:
-                print("delete_layers: Channel '{}' ".format(chan) + \
-                    "was present only in deleted layers and will be deleted as well.")
-                # since direct deletion would alter self.channels.items() over which
-                # the iteration is done, we store the channel name in chandellist
+            # which layers contain channel 'chan'?
+            nonmissing = [i for i, lay in enumerate(self.layers)
+                if chan in lay.channels.keys()]            
+
+            # if 'chan' is missing in all preserved layers,
+            # delete 'chan'
+            if not nonmissing:
+                print(("delete_layers: Channel '{}' was present"
+                    " only in deleted layers and will be deleted"
+                    " as well.").format(chan))
+                # since direct deletion would alter
+                # self.channels.items() over which the iteration
+                # is done, we store the channel name in chandellist
                 chandellist.append(chan)
             else:
-                self.setchan(chan, arr)
+                self.setchan(chan, arr, updatelayers=True)
                 
         # delete all useless channels
         for chan in chandellist:
             self.delchan(chan)
             
-        print("delete_layers: There remain {} layers and channels {}.".format(
-            self.numlay, list(self.channels.keys())))
+        print(("delete_layers: There remain {} layers and channels"
+            " {}.").format(self.numlay, list(self.channels.keys())))
 
-    def delete_channels(self, *chanlist):
-        """delete channels specified by 'chanlist'; if there remain no channels
-        in the SPMdata structure after deletion, layers are NOT deleted, i.e.
-        they preserve their metadata
+    def delete_channels(self, *cl):
+        """delete channels specified by 'chanlist'; if there
+        remain no channels in the SPMdata structure after deletion,
+        layers are NOT deleted, i.e. they preserve their metadata
         """
         
-        for chan in chanlist:
+        for chan in cl:
             self.delchan(chan)
-        print("delete_channels: Channels '{}' deleted.".format(chanlist))
+        print("delete_channels: Channels '{}' deleted.".format(cl))
         
     def sort_spm(self, key=None):
         """sort layers
         
-        key - sorting function; if None, then sorting according to heights is used
+        key - sorting function; if None, then sorting according
+            to heights is used
         """
+        
+        # if implicit sorting is used, check whether all layers
+        # have defined attribute 'height'; similar discussion
+        # should be made for any other 'key'
+        if key is None:
+            heilist = [lay.height is None for lay in self.layers]
+            if any(heilist):
+                print("sort_spm: Not all layers have defined"
+                    " 'height' attribute. Halt.")
+                return
         
         key = (lambda x: x.height) if key is None else key
 
@@ -510,16 +380,8 @@ class SPMdata:
         for chan, val in self.channels.items():
             arr = val[indsort].copy()
             
-            # update all relevant layers
-            for i, lay in enumerate(self.layers):
-                if chan not in lay.channels.keys(): continue
-                lay.setchan(chan, arr[i,
-                    lay.xoffind[chan]:lay.xoffind[chan] + lay.xnum,
-                    lay.yoffind[chan]:lay.yoffind[chan] + lay.ynum
-                    ])
-            
             # update channel
-            self.setchan(chan, arr)
+            self.setchan(chan, arr, updatelayers=True)
         
     def rewrite_channel(self, channame, arr, checknan=True):
         """replace array corresponding to 'channame' by 'arr';
@@ -535,68 +397,71 @@ class SPMdata:
             problems in aligning procedures
         """
         
-        if channame not in self.channels.keys():
+        # check channel name
+        chan = channame
+        if chan not in self.channels.keys():
             print(("rewrite_channel: Invalid channel"
-                " name '{}'.").format(channame))
+                " name '{}'.").format(chan))
             return
             
         # check whether in the valid data frames for each layer
         # there are NaNs; if so, halt with no change in SPMdata
         # structure
         for i, lay in enumerate(self.layers):
-            if channame not in lay.channels.keys(): continue
+            if chan not in lay.channels.keys(): continue
             arrslice = arr[i,
-                lay.xoffind[channame]:lay.xoffind[channame] + lay.xnum,
-                lay.yoffind[channame]:lay.yoffind[channame] + lay.ynum]
+                lay.xoffind[chan]:lay.xoffind[chan] + lay.xnum,
+                lay.yoffind[chan]:lay.yoffind[chan] + lay.ynum]
                 
             if checknan and np.any(np.isnan(arrslice.flat)):
                 print("rewrite_channel: Nuexpected NaNs in a "
                     "valid data frame. Halt.")
                 return
 
-        # update pointers in each layer
-        for i, lay in enumerate(self.layers):
-            if channame not in lay.channels.keys(): continue
-            arrslice = arr[i,
-                lay.xoffind[channame]:lay.xoffind[channame] + lay.xnum,
-                lay.yoffind[channame]:lay.yoffind[channame] + lay.ynum]                
-            lay.setchan(channame, arrslice)
-
-        # save new data            
-        self.setchan(channame, arr)
+        # if no NaNs present in valid data frame, update pointers
+        # in each layer and save new data            
+        self.setchan(chan, arr, updatelayers=True)
         
     def check_valid_frames(self):
-        """maintenance tool for analysing whether frames defined by lay.xoffind, 
-        lay.yoffind, lay.xnum, lay.ynum for each layer lay contain only valid data
+        """maintenance tool for analysing whether frames defined
+        by lay.xoffind, lay.yoffind, lay.xnum, lay.ynum for each
+        layer lay contain only valid data
         """
         
-        # THIS PROCEDURE SHOULD BE AUGMENTED BY ADDITIONAL FEATURES, NOW IT ONLY
-        # CHECKS WHETHER THERE ARE SOME NANS IN VALID DATA FRAMES, BUT NOT CHECK
-        # WHETHER THERE ARE VALID DATA OUTSIDE THE FRAME ETC.
+        # THIS PROCEDURE SHOULD BE AUGMENTED BY ADDITIONAL
+        # FEATURES, NOW IT ONLY CHECKS WHETHER THERE ARE SOME
+        # NANS IN VALID DATA FRAMES, BUT NOT CHECK WHETHER THERE
+        # ARE VALID DATA OUTSIDE THE FRAME ETC.
         
         nonans = True
         for i, lay in enumerate(self.layers):
             for chan, val in lay.channels.items():
                 if np.any(np.isnan(val.flat)):
-                    print("check_valid_frames: In layer no. {:3}, channel '{}'".format(
-                        i, chan) + " there are redundant NaNs.")
+                    print(("check_valid_frames: In layer no."
+                        " {:3}, channel '{}' there are redundant"
+                        " NaNs.").format(i, chan))
                     nonans = False
         if nonans:
             print("check_valid_frames: There are no redundant NaNs.")
         
     def add_layers(self, laylist, heilist=None):
-        """insert additional layers full of NaNs into SPMdata structure
+        """insert additional layers full of NaNs into SPMdata
+        structure
         
-        laylist - list of layer indices to be inserted, e.g. if there are 5 layers
-            initially and one wants to add one layer after the first layer in SPMdata
-            and two layers at the end of SPMdata, one sets laylist=[2,6,7], since the 
-            final SPMdata looks like:
+        laylist - list of layer indices to be inserted, e.g. if
+            there are 5 layers initially and one wants to add one
+            layer after the first layer in SPMdata and two layers
+            at the end of SPMdata, one sets laylist=[2,6,7], since
+            the final SPMdata looks like:
             [1(old), 2(new), 3(old), 4(old), 5(old), 6(new), 7(new)];
-            it is assumed that laylist does not contain two identical indices, not even
-            of the type: let number of layers of the final SPMdata structure be 6, then
+            it is assumed that laylist does not contain two
+            identical indices; this assumption also applies to
+            negative indices, i.e.
+            if self.numlay == 6 and laylist = [2, -4],
+            then we obtain wrong behaviour of the routine since
             ind1=2 denotes the same position as ind2 = -4;
-        heilist -  list of heights for new layers; if None, then lay.height is left
-            as None
+        heilist -  list of heights for new layers;
+            if None, then lay.height is left as None
         """
         
         # process list of layers
@@ -606,12 +471,21 @@ class SPMdata:
         laylist.sort()
         numl = len(laylist) + self.numlay        
         
+        # if indices out of bounds, halt
         if max(laylist) >= numl:
             print("add_layers: Invalid list of layer indices.")
+            return
 
         # process list of heights
         heilist = [None]*numl if heilist is None else heilist[:numl]
         heilist += [None]*(numl - len(heilist))
+
+        # allocate new layers
+        for i, ind in enumerate(laylist):
+            # insert new layer in the position ind
+            self.layers[ind:ind] = [SPMdataLayer()]
+            
+            self.layers[ind].height = heilist[i]
 
         # reallocate channel arrays
         for chan, val in self.channels.items():
@@ -620,49 +494,56 @@ class SPMdata:
             
             complist = [i for i in range(numl) if i not in laylist]
             arr[complist] = val
-            self.setchan(chan, arr)
-
-        # allocate new layers
-        for i, ind in enumerate(laylist):
-            self.layers[ind:ind] = [SPMdataLayer()]
-            lay = self.layers[ind]
-            lay.height = heilist[i]
+            self.setchan(chan, arr, updatelayers=True)
         
-    def add_channel(self, channame, arr, direction='forward', units=None, deep=True, 
-        xofflist=None, yofflist=None, xnum=None, ynum=None):
+    def add_channel(self, channame, arr, direction='forward',
+        units=None, deep=True, xofflist=None, yofflist=None,
+        xnum=None, ynum=None, xstep=1.0, ystep=1.0):
         """add a new channel to the structure
         
-        arr - array to represent the channel, if arr corresponds to the number of layers
-            greater than self.numlay, then arr is reallocated and padded with NaNs to
-            match the self.numlay, if arr corresponds to the number of layer less than
-            self.numlay, then only first self.numlay layers of arr is used
-        channame - name of the channel, if channame is already present in the structure,
-            the original array is overriden
-        direction - which scan direction the arr represents, it can be either
-            'forward' or 'backward', if the latter is used and channame does not ends with
+        arr - array to represent the channel, if arr corresponds
+            to the number of layers greater than self.numlay,
+            then arr is reallocated and padded with NaNs to match
+            the self.numlay, if arr corresponds to the number of
+            layers less than self.numlay, then only first
+            self.numlay layers of arr is used
+        channame - name of the channel, if channame is already
+            present in the structure, the original array is
+            overwritten
+        direction - which scan direction the arr represents, it
+            can be either 'forward' or 'backward';
+            if the latter is used and channame does not ends with
             'b', this 'b' is appended to the channame
-        units - in which units the data in arr should be interpreted; if None, then 
-            default UNKNOWN value is used
+        units - in which units the data in arr should be
+            interpreted;
+            if None, then default UNKNOWN value is used
         deep - if True, then deep copy of arr is used
-        xofflist, yofflist - x- and y-offinds for each layer; if None, then zero offinds
-            are used
-        xnum, ynum - lists of xnums and ynums for each layer; if None, then xnum and ynum
-            of each layer is set to arr.shape[1] and arr.shape[2], respectively; these
-            parameters are used only when the SPMdata structure is empty before adding
-            channame; if there are already some channels in SPMdata structure, then
-            these parameters ARE NOT USED
+        xofflist, yofflist - x- and y-offinds for each layer;
+            if None, then zero offinds are used
+        xnum, ynum - lists of xnums and ynums for each layer;
+            if None, then xnum and ynum of each layer is set to 
+            arr.shape[1] and arr.shape[2], respectively; these
+            parameters are used only when the SPMdata structure
+            is empty before adding channame; if there are already
+            some channels in SPMdata structure, then these
+            parameters ARE NOT USED
+        xstep, ystep - data resolution in x- and y-direction, i.e.
+            how long physical dimension correspond to a single 
+            index in the arrays for individual channels;
+            if they are left unspecified, then these are by default
+            set as 1 to the SPMdata structure
         """
         
-        # process the channel name
+        # process the channel name with respect to the direction
         if direction == 'backward':
             if not is_backward_scan(channame):
-                print("add_channel: Invalid channel name '{}' for backward scanning.".format(
-                    channame))
+                print(("add_channel: Invalid channel name '{}'"
+                    " for backward scanning.").format(channame))
                 return
         elif direction == 'forward':
             if is_backward_scan(channame):
-                print("add_channel: Invalid channel name '{}' for forward scanning.".format(
-                    channame))
+                print(("add_channel: Invalid channel name '{}'"
+                    " for forward scanning.").format(channame))
                 return
         else:
             print("add_channel: Invalid channel name.")
@@ -686,14 +567,17 @@ class SPMdata:
                 ynum = list(ynum[:self.numlay])
                 ynum += [arr.shape[2]]*(self.numlay - len(ynum))            
             
+            # update xnums and ynums for each layer
             for i, lay in enumerate(self.layers):
                 lay.xnum, lay.ynum = xnum[i], ynum[i]
         
-        # new channel array must be at least as big as valid data frame
+        # new channel array must be at least as big as valid data
+        # frame
         xnum, ynum = max(self.xnums), max(self.ynums)
         if arr.shape[1] < xnum or arr.shape[2] < ynum:
-            print(("add_channel: Input array (x, y)-shape must be at least "
-                "({}, {}). Provided shape is ({}, {}).").format(xnum, ynum,
+            print(("add_channel: Input array (x, y)-shape must"
+                " be at least ({}, {}). Provided shape is"
+                " ({}, {}).").format(xnum, ynum,
                 arr.shape[1], arr.shape[2]))          
             return      
         
@@ -701,7 +585,8 @@ class SPMdata:
         if arr.shape[0] >= self.numlay:
             array = arr[:self.numlay]
         else:
-            array = np.empty((self.numlay, arr.shape[1], arr.shape[2]))
+            array = np.empty(
+                (self.numlay, arr.shape[1], arr.shape[2]))
             array.fill(np.nan)
             array[:arr.shape[0]] = arr
         array = array.copy() if deep else array
@@ -713,11 +598,12 @@ class SPMdata:
             if units in self.units:
                 self.units[channame] = UNITS[units]
             else:
-                print("add_channel: Unknown units '{}'.".format(units) + \
-                " Default units used instead.")
+                print(("add_channel: Unknown units '{}'. Default"
+                    " units used instead.").format(units))
                 self.units[channame] = UNITS[UNKNOWN]
-
-        # initialize offinds and adjust them to match number of layers
+        
+        # initialize offinds and adjust them to match number of
+        # layers
         if xofflist is None:
             print("add_channel: No index x-offsets specified.")
             xofflist = [0]*self.numlay
@@ -732,102 +618,141 @@ class SPMdata:
             yofflist = list(yofflist[:self.numlay])
             yofflist += [0]*(self.numlay - len(yofflist))
 
-        xn = [xofflist[i] + lay.xnum for i, lay in enumerate(self.layers)]
-        yn = [yofflist[i] + lay.ynum for i, lay in enumerate(self.layers)]
+        # maximal dimensions
+        xn = [xofflist[i] + lay.xnum
+            for i, lay in enumerate(self.layers)]
+        yn = [yofflist[i] + lay.ynum
+            for i, lay in enumerate(self.layers)]
 
-        # xoffind + xnum must be always <= x-shape of the array, and similarly for y-shape 
+        # xoffind + xnum must be always <= x-shape of the array,
+        # and similarly for y-shape 
         if (np.array(xn) > array.shape[1]).any() \
             or (np.array(yn) > array.shape[2]).any():
-            print("add_channel: Index offsets specified do not match array shape.")
+            print("add_channel: Index offsets specified do not"
+                " match array shape.")
             return
         
-        # if channame is already present in the structure, delete it
+        # if channame is already present in the structure,
+        # delete it
         if channame in self.channels:
             self.delchan(channame)
 
-        # set a channel to the structure
-        self.setchan(channame, arr)
-
-        # update data for layers        
+        # update offinds for layers        
         for i, lay in enumerate(self.layers):
-            arr = self.channels[channame][i]
-            lay.setchan(channame,
-                arr[xofflist[i]:xofflist[i] + lay.xnum,
-                    yofflist[i]:yofflist[i] + lay.ynum])
             lay.xoffind[channame] = xofflist[i]
             lay.yoffind[channame] = yofflist[i]
+            
+            # setchan routine needs to know all channels present
+            # in the lay.channels, so we add it artificially
+            lay.channels[channame] = None
+
+        # set a channel to the structure
+        self.setchan(channame, array, updatelayers=True)
+        self.xsteps[channame] = xstep
+        self.ysteps[channame] = ystep
         
-        print("add_channel: New channel '{}' successfully added.".format(channame))
+        print(("add_channel: New channel '{}' successfully"
+            " added.").format(channame))
         
     # PROPERTIES, AUXILIARY INQUIRING FUNCTIONS, GETTERS
         
     @property
     def channels_counts(self):
-        """self.channels_counts = {ELEV: [0, 1, 3, 4, 7, ...] (list of layers containing the given channel), ...}
+        """dictionary, where for each channel there is a list of
+        layers containing the given channel
+        
+        self.channels_counts = {ELEV: [0, 1, 3, 4, 7, ...], ...}
         """
         
-        return {chan: [i for i, lay in enumerate(self.layers) if chan in lay.channels.keys()] for chan in self.channels}
+        return {chan: [i for i, lay in enumerate(self.layers)
+            if chan in lay.channels.keys()]
+            for chan in self.channels}
         
     @property
     def arrshape(self):
-        """self.arrshape = {ELEV:(xdim of 3D array corresponding to ELEV, ydim of 3D array corresponding to ELEV), ...}
+        """dictionary of (x, y) shapes of all arrays corresponding
+        to channels in the structure
+        self.arrshape = {ELEV:(xdim of 3D array for ELEV,
+        ydim of 3D array for ELEV), ...}
         """
-        return {chan: self.channels[chan].shape[1:] for chan in self.channels}
+        
+        return {chan: self.channels[chan].shape[1:]
+            for chan in self.channels}
         
     def __len__(self):
-    	return len(self.layers)
+        """length, i.e. number of layers
+        """
+
+        return len(self.layers)
         
     def print_channels(self):
         """print channels present in self
         """
         
-        chans = self.channels.keys()
-        print("print_channels: There are {} channels: {}.".format(len(chans), list(chans)))
-        
+        print(("print_channels: There are {} channels: {}."
+            ).format(len(self.channels.keys()),
+            list(self.channels.keys())))
+                
     @property
     def numlay(self):
     	"""number of layers, the same output as for len()
     	"""
     
     	return len(self.layers)
-    
+        
     @property
     def xoffinds(self):
+        """index offsets in x-direction for each channel
+        """
+        
         return {chan: [lay.xoffind[chan]
-                    for lay in self.layers if chan in lay.channels]
-                    for chan in self.channels.keys()}
+            for lay in self.layers if chan in lay.channels]
+            for chan in self.channels.keys()}
 
     @property
     def yoffinds(self):
+        """index offsets in y-direction for each channel
+        """
+        
         return {chan: [lay.yoffind[chan]
-                    for lay in self.layers if chan in lay.channels]
-                    for chan in self.channels.keys()}
+            for lay in self.layers if chan in lay.channels]
+            for chan in self.channels.keys()}
     
     def print_offinds(self, chan):
-        """print xoffind and yoffind for all layers for channel 'chan'
+        """print xoffind and yoffind for all layers for channel
+        'chan'
         """
 
         if chan not in self.channels.keys():
-            print("print_offinds: Invalid channel '{}'.".format(chan))
+            print(("print_offinds: Invalid channel '{}'."
+                ).format(chan))
             return
 
         print("print_offinds: In total {} layer{}{}".format(
             self.numlay, "s" if self.numlay != 1 else "",
-    		"." if self.numlay == 0 else \
-    		" with offinds (xoffind, yoffind) for channel '{}':".format(chan)))
+    		"." if self.numlay == 0 else (
+    		" with offinds (xoffind, yoffind) for channel '{}':"
+    		).format(chan)))
         for i, lay in enumerate(self.layers):
             if chan not in lay.channels.keys():
                 xoff, yoff = "absent", "absent"
             else:
                 xoff, yoff = lay.xoffind[chan], lay.yoffind[chan]
-            print("\tLayer no. {:<3}: {}, {} ".format(i, xoff, yoff))
+            print("\tLayer no. {:<3}: {}, {} ".format(
+                i, xoff, yoff))
     
     @property
     def xoffsets(self):
+        """physical offsets in x-direction for each layer
+        """
+        
         return [lay.xoffset for lay in self.layers]
 
     @property
     def yoffsets(self):
+        """physical offsets in y-direction for each layer
+        """
+
         return [lay.yoffset for lay in self.layers]
     
     def print_offsets(self):
@@ -848,13 +773,42 @@ class SPMdata:
             for i, lay in enumerate(self.layers):
                 print("\tLayer no. {:<3}: {}, {} {}".format(
                     i, lay.xoffset, lay.yoffset, UNITS[ELEV]))
+    
+    def print_steps(self):
+        """print xsteps and ysteps for all layers
+        """
+
+        chanlen = len(self.channels.keys())
+        steps = set(zip(self.xsteps, self.ysteps))        
+        if len(steps) == 1:
+            print("print_steps: In total {} channel{}".format(
+                chanlen, "s" if chanlen != 1 else "") + \
+                " with {}steps: (xstep, ystep) = {} {}".format(
+        		"identical " if chanlen > 1 else "",
+        		steps.pop(), UNITS[ELEV]))
+        else:
+            print("print_steps: In total {} channel{}".format(
+                chanlen, "." if chanlen == 0 else \
+                " with steps (xstep, ystep):"))
+            for chan, val in self.channels.items():
+                print("\tChannel '{:7}': {:.6}, {:.6} {}".format(
+                    chan, self.xsteps[chan], self.ysteps[chan],
+                    UNITS[ELEV]))
 
     @property
     def xranges(self):
+        """physical range of valid data in x-direction for each
+        layer
+        """
+        
         return [lay.xran for lay in self.layers]
 
     @property
     def yranges(self):
+        """physical range of valid data in y-direction for each
+        layer
+        """
+
         return [lay.yran for lay in self.layers]
     
     def print_ranges(self):
@@ -878,7 +832,10 @@ class SPMdata:
 
     @property
     def heights(self):
-    	return [lay.height for lay in self.layers]
+        """heigts of scans for each layer
+        """
+        
+        return [lay.height for lay in self.layers]
         
     def print_heights(self):
     	"""print height for all layers
@@ -893,7 +850,11 @@ class SPMdata:
 	
     @property
     def filenames(self):
-    	return [lay.filename for lay in self.layers]
+        """names of files from which data were taken for each
+        layer
+        """
+
+        return [lay.filename for lay in self.layers]
 	
     def print_filenames(self):   
     	"""print filename for all layers
@@ -909,18 +870,21 @@ class SPMdata:
     def nums(self):
         """dimensions of valid data
         """
+        
         return [(lay.xnum, lay.ynum) for lay in self.layers]
 
     @property
     def xnums(self):
         """x-dimensions of valid data
         """
+        
         return [lay.xnum for lay in self.layers]
 
     @property
     def ynums(self):
         """y-dimensions of valid data
         """
+        
         return [lay.ynum for lay in self.layers]
 
     def print_nums(self):
@@ -932,7 +896,8 @@ class SPMdata:
             print("print_nums: In total {} layer{} with".format(
                 self.numlay, "s" if self.numlay != 1 else "") + \
                 " {}dimensions: (xnum, ynum) = {}".format(
-        		"identical " if self.numlay > 1 else "", dimsl.pop()))
+        		"identical " if self.numlay > 1 else "",
+        		dimsl.pop()))
         else:
             print("print_nums: In total {} layers{}".format(
                 self.numlay, "." if self.numlay == 0 else \
@@ -976,7 +941,8 @@ class SPMdata:
 
     # DATA LOADING
 
-    def load_data(self, paths=(), suffixes=SUFFIXES, key=None, finer=True):
+    def load_data(self, paths=(), suffixes=SUFFIXES, key=None,
+        finer=True):
         """loads data from external files
 
         paths - name of the file or tuple of filenames storing
@@ -1005,10 +971,10 @@ class SPMdata:
             if finer=False, then data with higher resolution are
             downsampled so that they can be added to data with lower
             resolution;
-            each layer contains attributes horstep and verstep, which
-            represent data resolution in x- and y-direction; these
-            attributes should not be modified, since they express
-            resolution of the original data
+            each layer contains attributes horstep and verstep,
+            which represent data resolution in x- and y-direction;
+            these attributes should not be modified, since they
+            express resolution of the original data
         """
 
         spm_load_data(self, paths=paths, suffixes=suffixes,
@@ -1016,35 +982,27 @@ class SPMdata:
 
     # DATA MANIPULATION
     
-    def setchan(self, chan, val, aver=None):
+    def setchan(self, chan, val, updatelayers=False):
         """set channel to the structure
         
         chan - channel to be set
         val - value to be set to channel 'chan'
-        aver - flags stating whether the channel has been averaged
-            already
+        updatelayers - iff True, then pointers to valid data
+            frame are updated for each layer    
         """
         
         setattr(self, chan, val)
         self.channels[chan] = val
         
-        if is_backward_scan(chan):
-            chanl = get_forward_scan(chan)
-        else:
-            chanl = chan
-        
-        if chanl not in self.channels_fb:
-            self.channels_fb[chanl] = [None, None, None]
-                
-        if is_backward_scan(chan):
-            self.channels_fb[chanl][1] = val
-            self.channels_fb[chanl][2] = False
-        else:
-            self.channels_fb[chan][0] = val
-            
-        if aver is not None:
-            self.channels_fb[chanl][2] = aver
+        if updatelayers:
+            for i, lay in enumerate(self.layers):
+                if chan not in lay.channels.keys(): continue
+                lay.setchan(chan, self.channels[chan][i,
+                    lay.xoffind[chan]:lay.xoffind[chan] + lay.xnum,
+                    lay.yoffind[chan]:lay.yoffind[chan] + lay.ynum
+                    ])
 
+        
     def delchan(self, chan):
         """delete channel from the structure
         
@@ -1054,58 +1012,32 @@ class SPMdata:
         if chan not in self.channels:
             return
         
-        del self.channels[chan]
-        
-        if is_backward_scan(chan):
-            chanl = get_forward_scan(chan)
-            self.channels_fb[chanl][1] = None
-        else:
-            chanl = chan
-            self.channels_fb[chanl][0] = None
-        if self.channels_fb[chanl][:2] == [None, None]:
-            del self.channels_fb[chanl]
-            
+        del self.channels[chan]    
         for lay in self.layers:
             lay.delchan(chan)
             
         delattr(self, chan)
-    	
-    def is_averaged(self, chan):
-        """returns True, if forward and backward scans were
-           averaged already,
-           returns None, if backward scan has not been loaded
-           returns False, if forward and backward scans have
-           not been averaged yet
-        """
-    
-        return self.channels_fb[chan][2]
-    	
-    def average_channels(self, cl=None, fun=None, output=None):
+    	    	
+    def average_channels(self, cl=None, fun=None, spmout=True):
         """average forward and backward scans for given channels
         
         THIS PROCEDURE SHOULD BE USED PRIOR TO ANY ALIGN PROCEDURE!!!
         
-        cl - list of channels to be averaged, if None, then all
+        cl - list of channels to be averaged; if None, then all
             channels are averaged
         fun - average function, if None, then arithmetic average
             is used
-        output - is None, then each valid forward channel in
-            'cl' is overwritten by corresponding average and relevant
-            backward channel is deleted, this case is not preferred
-            as valid data in an averaged channel does fill the whole
-            valid data frame defined by offinds and nums for each
-            channel;
-            if 'output'=='spm', then averaged channels will be put
-            into SPMdata structure and returned; otherwise this
-            routine returns a dictionary of the form
+        spmout - if True, then averaged channels will be put into
+            SPMdata structure and returned;
+            if False this routine returns a dictionary of the form
             '{chan:arrchan, ...}' for 'chan' in 'cl' and
             corresponding array 'arrchan'
             
         returns:
-            if 'output' is None, then None is returned;
-            if 'output'=='spm', then SPMdata structure is returned,
+            if 'spmout'==True, then SPMdata structure is returned,
             containing average channels as channels;
-            otherwise a dictionary of channels is returned
+            if 'spmout'==False, then a dictionary of channels is
+            returned
         """
 
         # choose averaging function
@@ -1118,16 +1050,14 @@ class SPMdata:
             avfun = fun
         
         # which channels to average:
-        # if cl is None, then take all channels...
-        clf = cl if cl is not None else self.channels.keys()
-        # take only forward channels which are present in self...
-        clf = [chan for chan in clf 
-                if not is_backward_scan(chan) 
-                and chan in self.channels.keys()]
-        # take only those channels for which there is corresponding
-        # backward channel
-        clf = [chan for chan in clf
-                if get_backward_scan(chan) in self.channels.keys()]        
+        # if cl is None, then take all channels
+        cl = self.channels.keys() if cl is None else cl
+        cl = [chan for chan in cl if chan in self.channels.keys()]
+        # take only such forward channels, for which there is
+        # corresponding backward channel
+        cl = [chan for chan in cl 
+                if not is_backward_scan(chan)
+                if get_backward_scan(chan) in self.channels.keys()]
         
         res = {}    
         
@@ -1136,20 +1066,10 @@ class SPMdata:
             forscan = self.channels[chan]
             bckscan = self.channels[get_backward_scan(chan)]
             res[chan] = avfun(forscan, bckscan)
-            print("average_channels: Channel '{}' averaged.".format(chan))
+            print(("average_channels: Channel '{}' averaged."
+                ).format(chan))
 
-        if output is None:
-            for chan in clf:
-                self.channels_fb[chan][2] = True
-
-                # rewrite channel and do not care about NaNs
-                self.rewrite_channel(
-                    chan, avfun(forscan, bckscan), checknan=False)
-                
-                # delete original backward channel
-                self.delchan(get_backward_scan(chan))
-                
-        elif output == 'spm':
+        if spmout:
             spmdata = create_spm()
             spmdata.channels = res
             spmdata.determine()
@@ -1188,6 +1108,7 @@ class SPMdata:
             
             # for each channel...
             for chan, val in self.channels.items():
+
                 # find out where are NaNs, elementwise
                 mask = np.isnan(val[i])
                 
@@ -1215,13 +1136,22 @@ class SPMdata:
                 # the last occurence is taken as the first 
                 # occurence in the reversed array, in which
                 # case we have to add the array dimension
-                maxrow = np.argmin(maskrow[::-1]) + maskrow.shape[0]
-                maxclm = np.argmin(maskclm[::-1]) + maskclm.shape[0]
+                maxrow, maxclm = maskrow.shape[0], maskclm.shape[0]
+                maxrow -= np.argmin(maskrow[::-1])
+                maxclm -= np.argmin(maskclm[::-1])
                         
                 # if there are no valid data for channel 'chan'
                 # in the present layer, delete the channel from
                 # the layer
-                if maxrow == minrow or maxclm == minclm:
+                if mask.all() and chan in lay.channels.keys():
+                    # condition something like:
+                    # if maxrow <= minrow or maxclm <= minclm: ...
+                    # cannot be used, because if the array is full
+                    # of NaNs, then mask is full of True's and
+                    # argmin returns the first occurence of True,
+                    # instead of the first occurence of False
+                    print(("determine: Channel '{}' in layer no."
+                        " {} deleted.").format(chan, i))
                     lay.delchan(chan)
                 else:
                     # store xnum, ynum, xoffind, yoffind for each
@@ -1248,6 +1178,9 @@ class SPMdata:
         # update xnum, ynum and pointers for each layer
         for i, lay in enumerate(self.layers):        
             lay.xnum, lay.xnum = xnuml[i], ynuml[i]
+            
+            # here no self.setchan is used since we change only
+            # layer properties, not the arrays
             for chan in lay.channels.keys():
                 xoff, yoff = lay.xoffind[chan], lay.yoffind[chan]
                 lay.setchan(chan, self.channels[chan][i, 
@@ -1269,7 +1202,8 @@ class SPMdata:
         if not cl:
             cl = list(self.channels.keys())
         else:
-            cl = [chan for chan in cl if chan in self.channels.keys()]
+            cl = [chan for chan in cl
+                if chan in self.channels.keys()]
             
         xmin, ymin = [None]*len(cl), [None]*len(cl)
         xmax, ymax = [None]*len(cl), [None]*len(cl)
@@ -1277,15 +1211,18 @@ class SPMdata:
         # find frame limits
         for i, chan in enumerate(cl):
             # take only layers containing channel 'chan'
-            laylist = [lay for lay in self.layers if chan in lay.channels.keys()]
+            laylist = [lay for lay in self.layers
+                if chan in lay.channels.keys()]
 
             # from where to take valid data
             xmin[i] = min([lay.xoffind[chan] for lay in laylist])    
             ymin[i] = min([lay.yoffind[chan] for lay in laylist])    
             
             # up to where to take valid data
-            xmax[i] = max([lay.xoffind[chan] + lay.xnum for lay in laylist])
-            ymax[i] = max([lay.yoffind[chan] + lay.ynum for lay in laylist])
+            xmax[i] = max([lay.xoffind[chan] + lay.xnum
+                for lay in laylist])
+            ymax[i] = max([lay.yoffind[chan] + lay.ynum
+                for lay in laylist])
 
         if same:            
             # if all arrays have to have the same dimensions...
@@ -1293,33 +1230,41 @@ class SPMdata:
             xmaxv, ymaxv = max(xmax), max(ymax)
 
             for i, chan in enumerate(cl):
-                # in the following lines there is always subtracted 
-                # 'xminv' for both x and y axes!
+                # create new array
                 aux = np.empty(
-                    (self.numlay, xmaxv - xminv, ymaxv - yminv), dtype=float)
+                    (self.numlay, xmaxv - xminv, ymaxv - yminv),
+                    dtype=float)
                 aux.fill(np.nan)                
                 aux[:,
                     (xmin[i] - xminv):(xmax[i] - xminv),
                     (ymin[i] - yminv):(ymax[i] - yminv)
-                    ] = self.channels[chan][:, xmin[i]:xmax[i], ymin[i]:ymax[i]]
-                self.setchan(chan, aux.copy())            
+                    ] = self.channels[chan][:,
+                    xmin[i]:xmax[i], ymin[i]:ymax[i]]
+                  
+                # update xoffinds and yoffinds  
+                for j, lay in enumerate(self.layers):
+                    if chan not in lay.channels.keys(): continue
+                    lay.xoffind[chan] -= xminv
+                    lay.yoffind[chan] -= yminv
+                    
+                # update channel
+                self.setchan(chan, aux.copy(), updatelayers=True)            
         else:            
-            # if channel arrays do not need to have the same dimensions...
+            # if channel arrays do not need to have the sam
+            # dimensions...
             for i, chan in enumerate(cl):
-                # take valid data
-                aux = self.channels[chan][:, xmin[i]:xmax[i], ymin[i]:ymax[i]]            
-                self.setchan(chan, aux.copy())
-        
-        # update layer pointers to new arrays as well as xoffinds and yoffinds
-        for i, chan in enumerate(cl):
-            for j, lay in enumerate(self.layers):
-                if chan not in lay.channels.keys(): continue
-                lay.xoffind[chan] -= xminv if same else xmin[i]
-                lay.yoffind[chan] -= yminv if same else ymin[i]
+                # create new array
+                aux = self.channels[chan][:,
+                    xmin[i]:xmax[i], ymin[i]:ymax[i]]            
 
-                lay.channels[chan] = self.channels[chan][j, 
-                        lay.xoffind[chan]:lay.xoffind[chan] + lay.xnum,
-                        lay.yoffind[chan]:lay.yoffind[chan] + lay.ynum]
+                # update xoffinds and yoffinds  
+                for j, lay in enumerate(self.layers):
+                    if chan not in lay.channels.keys(): continue
+                    lay.xoffind[chan] -= xmin[i]
+                    lay.yoffind[chan] -= ymin[i]
+                    
+                # update channel
+                self.setchan(chan, aux.copy(), updatelayers=True)            
 
     def hew_nans(self, minl=None, maxl=None, same=True):
         """hew_nans NANs from 3D arrays corresponding to each
@@ -1339,52 +1284,55 @@ class SPMdata:
         # range of layers for hew_nans
         lmin = 0 if minl is None else minl
         lmax = self.numlay if maxl is None else maxl
-        lmin, lmax = lmin % (self.numlay + 1), lmax % (self.numlay + 1)
+        lmin = lmin % (self.numlay + 1)
+        lmax = lmax % (self.numlay + 1)
         if lmax < lmin: lmax, lmin = lmin, lmax
 
-        print("hew_nans: Cutoff performed for layers {} through {}.".format(lmin, lmax))
+        print(("hew_nans: Cutoff performed for layers {} through"
+            " {}.").format(lmin, lmax))
             
         # delete outside layers
         self.layers = self.layers[lmin:lmax].copy()
+        chanlen = len(self.channels)
         
-        xmin, ymin = [None]*len(self.channels), [None]*len(self.channels)
-        xmax, ymax = [None]*len(self.channels), [None]*len(self.channels)
+        xmin, ymin = [None]*chanlen, [None]*chanlen
+        xmax, ymax = [None]*chanlen, [None]*chanlen
 
         # find frame limits
         for i, chan in enumerate(self.channels):
             # take only layers containing channel 'chan'
-            laylist = [lay for lay in self.layers if chan in lay.channels.keys()]
+            laylist = [lay for lay in self.layers
+                if chan in lay.channels.keys()]
 
             # from where to take valid data
-            xmin[i] = max([lay.xoffind[chan] for lay in laylist])    
+            xmin[i] = max([lay.xoffind[chan] for lay in laylist])
             ymin[i] = max([lay.yoffind[chan] for lay in laylist])    
             
             # up to where to take valid data
-            xmax[i] = min([lay.xoffind[chan] + (lay.xnum - 1) for lay in laylist])
-            ymax[i] = min([lay.yoffind[chan] + (lay.ynum - 1) for lay in laylist])
+            xmax[i] = min([lay.xoffind[chan] + (lay.xnum - 1)
+                for lay in laylist])
+            ymax[i] = min([lay.yoffind[chan] + (lay.ynum - 1)
+                for lay in laylist])
             
         if same:
             # if all arrays have to have the same dimensions...
             xminv, yminv = max(xmin), max(ymin)
             xmaxv, ymaxv = min(xmax), min(ymax)
 
-            for chan in self.channels:
-                # take valid data
-                aux = self.channels[chan][lmin:lmax, xminv:xmaxv, yminv:ymaxv]                           
-                self.setchan(chan, aux.copy())
-        else:        
-            # if channel arrays do not need to have the same dimensions...
-            for i, chan in enumerate(self.channels):      
-                # take valid data
-                aux = self.channels[chan][lmin:lmax, xmin[i]:xmax[i], ymin[i]:ymax[i]]            
-                self.setchan(chan, aux.copy())
+            xmin, xmax = [xminv]*chanlen, [xmaxv]*chanlen
+            ymin, ymax = [yminv]*chanlen, [ymaxv]*chanlen
 
-        # update layer properties
-        for i, lay in enumerate(self.layers):
-            # layer pointers to new arrays and offinds
-            for chan in self.channels:       
+        # update channels
+        for i, chan in enumerate(self.channels):      
+            # take valid data
+            aux = self.channels[chan][lmin:lmax,
+                xmin[i]:xmax[i], ymin[i]:ymax[i]]            
+            
+            # update layer properties
+            for j, lay in enumerate(self.layers):
                 if chan not in lay.channels.keys(): continue     
-                lay.channels[chan] = self.channels[chan][i]
+                
+                # layer offinds
                 lay.xoffind[chan], lay.yoffind[chan] = 0, 0
                 
                 # since each layer does not have to have all
@@ -1393,67 +1341,81 @@ class SPMdata:
                 # being in the loop xnum and ynum are set
                 # as many times as there are channels in the
                 # layer, but whatever
-                lay.xnum, lay.ynum = lay.channels[chan].shape
+                lay.xnum, lay.ynum = aux.shape[1:]
+            
+            # update channel
+            self.setchan(chan, aux.copy(), updatelayers=True)
+
 
     # ALIGNMENT
 
-    def align_correlate(self, *cl, ichan=None, ilay=0, nlay=None,
-        rnlay=None, actlay=None, rellay=None, mislay=None, show=False,
-        xcoefs=None, ycoefs=None, fac=1, downsample=True, order=1):
-        """align arrays according to ichan channel, i.e. offsets are
-        calculated only once for ichan and then used multiple times
-        for all channels in cl, unknown values are represented by NANs,
-        resulting array may have bigger dimensions than original arrays
+    def align_correlate(self, *cl, rchan=None, rlay=0, alay=None,
+        ilay=None, actll=None, fitll=None, misll=None,
+        show=False, xcoefs=None, ycoefs=None, fac=1,
+        downsample=True, order=1):
+        """align arrays according to rchan channel, i.e. offsets
+        are calculated only once for rchan and then used multiple
+        times for all channels in cl, unknown values are
+        represented by NANs, resulting array may have bigger
+        dimensions than original arrays
         
         cl - list of channels to be aligned, if empty, then all
             channels are aligned
-        ilay - all layers are compared to fixed layer with index 'lay'
-        nlay - if actlay is not None or not all layers, then nlay
+        rlay - the index of a fixed reference layer with which
+            all layers are compared
+        alay - if actll is not None or not all layers, then alay
             specifies to which layer inactive layers should adhere,
-            i.e. offind of rnlay layer will be set to the offind of nlay;
-            if nlay is None or lies outside actlay, then it is set
-            to be the last layer in actlay
-        rnlay - analog of nlay for inactive layers, if None or in 
-            actlay, then it is set to be the first layer not in actlay
-        ichan - all channels in cl are aligned according to channel ichan
-        actlay - list of 'active' layers, which are to be aligned;
+            i.e. offind of ilay layer will be set to the offind
+            of alay;
+            if alay is None or lies outside actll, then it is set
+                to be the last layer in actll
+        ilay - analog of alay for inactive layers, if None or in 
+            actll, then it is set to be the first layer not in
+            actll
+        rchan - all channels in cl are aligned according to
+            the reference channel rchan
+        actll - list of 'active' layers, which are to be aligned;
             if None, then all layers are used
-        rellay - list of 'relevant' layers which are used to determine
-            offsets for layers in mislay, if None or empty, then
-            rellay is effectively put equal to all layers not lying in mislay
-        mislay - list of 'missing' layers for which offsets should
+        fitll - list of 'fitting' layers which are used to
+            determine offsets for layers in misll;
+            if None or empty, then fitll is effectively put equal
+                to all layers not lying in misll
+        misll - list of 'missing' layers for which offsets should
             be calculated by inter-/extra-polation;
-            if None or empty, then correlation calculation is performed
-            for all layers and no inter-/extra-polation is used;
-            if mislay and rellay are not disjoint, then mislay is
-            put equal to mislay minus rellay;
-            if mislay='all', then all layers are used for 
-            inter-/extra-polation
-        show - if True, then plot depicting rellay points and
+            if None or empty, then correlation calculation is
+                performed for all layers and no
+                inter-/extra-polation is used;
+            if misll and fitll are not disjoint, then misll is
+                put equal to misll minus fitll;
+            if misll='all', then all layers are used for 
+                inter-/extra-polation
+        show - if True, then plot depicting fitll points and
             extrapolation trends is shown,
-            control points - rellay points
-            calculated points - mislay points
-            x fit, y fit - fit of x-offsets and y-offsets, respectively
-            (manual) - shown if fit is set manually via xcoefs or ycoefs
+            control points - fitll points
+            calculated points - misll points
+            x fit, y fit - fit of x-offsets and y-offsets
+            (manual) - shown if fit is set manually via xcoefs
+                or ycoefs
             x offsets, y offsets - resulting x- and y-offsets
             red area - for this area no alignment is active,
-                i.e. corresponding layers do not lay in actlay
+                i.e. corresponding layers do not lay in actll
         xcoefs, ycoefs - linear and absolute coefficients for manual
             interpolation for x and y dimension, respectively;
             if not None, then these parameters are used instead of
-            automatically calculated ones, in which case 
-            xcoefs=(xlincoef, xabscoef) etc.;
-            if not None, then rellay is not used
+                automatically calculated ones, in which case 
+                xcoefs=(xlincoef, xabscoef) etc.;
+            if not None, then fitll is not used
         fac - upsampling factor
-        downsample - whether to perform downsampling after correlation
+        downsample - whether to perform downsampling after
+            correlation
         order - order of interpolation for resampling
             
         FOR EXAMPLES SEE ALIGN_CORRELATE IN MODULE SPM_DATA_ALIGN
         """
        
-        spm_align_correlate(self, *cl, ichan=ichan, ilay=ilay,
-            nlay=nlay, rnlay=rnlay, actlay=actlay, rellay=rellay,
-            mislay=mislay, show=show, xcoefs=xcoefs, ycoefs=ycoefs,
+        spm_align_correlate(self, *cl, rchan=rchan, rlay=rlay,
+            alay=alay, ilay=ilay, actll=actll, fitll=fitll,
+            misll=misll, show=show, xcoefs=xcoefs, ycoefs=ycoefs,
             fac=fac, downsample=downsample, order=order)
        
     def align_offsets(self, *cl):
@@ -1469,9 +1431,9 @@ class SPMdata:
 
         spm_align_offsets(self, *cl)
 
-    def align_forback(self, *cl, ichan=None, same=True, ilay=0,
+    def align_forback(self, *cl, rchan=None, same=True, rlay=0,
         xdir=True, ydir=True, order=0):
-        """align all channels in 'cl' according to 'ichan' channel
+        """align all channels in 'cl' according to 'rchan' channel
         so that forward and backward scans are moved towards each
         other and aligned 'to the centre', this routine does not
         align layers within one channel, but channels among
@@ -1479,46 +1441,51 @@ class SPMdata:
         
         cl - sequence of channels to be aligned; if empty, then
             all channels are aligned
-        ichan - reference channel; if None, then each channel is
+        rchan - reference channel; if None, then each channel is
             aligned independently
         same - if True, then resulting 3D arrays for all channels
             in cl are of the same dimensions;
             if False, then 3D arrays for forward and backward
             direction of each physical quantity have the same
             dimension
-        ilay - reference layer 
+        rlay - reference layer 
         xdir - if True, than allow shift in x-direction
         ydir - if True, than allow shift in y-direction
         order - order of interpolation during shifting
         """
 
-        spm_align_forback(self, *cl, ichan=ichan, same=same,
-            ilay=ilay, xdir=xdir, ydir=ydir, order=order)
+        spm_align_forback(self, *cl, rchan=rchan, same=same,
+            rlay=rlay, xdir=xdir, ydir=ydir, order=order)
            
     # DISPLAY PROCEDURES
     
-    def show_layer(self, *cl, ilay=0, rangelayer='each'):
-        """show valid data for channel 'chan' in layer 'ilay'
+    def show_layer(self, *cl, rlay=0, rangelayer='each'):
+        """show valid data for channel 'chan' in layer 'rlay'
         
         cl - sequence of channels to be shown
-        ilay - which layer to show
+        rlay - which layer to show
         rangelayer - which layer to choose for scaling; if 'each',
-            then scaling is based on layer 'ilay'; if 'all', then
+            then scaling is based on layer 'rlay'; if 'all', then
             scaling is based on maximum and minimum of the whole
             3D array pertaining to channels in 'cl'
         """
         
-        cl = [chan for chan in cl if chan in self.layers[ilay].channels]
-        if len(cl) == 0:
+        # take only those channels, which are present in 'rlay'
+        cl = [chan for chan in cl
+            if chan in self.layers[rlay].channels.keys()]
+        if not cl:
             print("show_layer: No valid channel to show.")
             return
         
+        # create plot
         fig, axes = plt.subplots(1, len(cl), squeeze=False,
-            num="Valid data for layer no. {}".format(ilay))
+            num="Valid data for layer no. {}".format(rlay))
         
-        lay = self.layers[ilay]
+        lay = self.layers[rlay]
         
+        # initialize each subplot
         for ax, chan in zip(axes.flat, cl):
+            # determine scaling for imshow
             if rangelayer == 'each':
                 vmin, vmax = None, None
             elif rangelayer == 'all':
@@ -1529,14 +1496,17 @@ class SPMdata:
 #                vmin = np.nanmin(self.channels[chan][rangelayer])
 #                vmax = np.nanmax(self.channels[chan][rangelayer])
 
-#            bottolim = lay.horstep * lay.channels[chan].shape[0]                
-#            rightlim = lay.verstep * lay.channels[chan].shape[1]
-            bottolim = self.horsteps[chan] * lay.channels[chan].shape[0]                
-            rightlim = self.versteps[chan] * lay.channels[chan].shape[1]
-
+            # determine dimensions of the image
+            bottolim = self.xsteps[chan] #lay.xstep
+            bottolim *= lay.channels[chan].shape[0]                
+            rightlim = self.ysteps[chan] #lay.ystep
+            rightlim *= lay.channels[chan].shape[1]
             extent = (0, rightlim, bottolim, 0)
-            ax.imshow(self.layers[ilay].channels[chan],
-                vmin=vmin, vmax=vmax, origin='lower', extent=extent)
+            
+            # create image
+            ax.imshow(self.layers[rlay].channels[chan],
+                vmin=vmin, vmax=vmax, origin='lower',
+                extent=extent)
             ax.set_title("Channel '{}' [units: {}]".format(
                 chan, self.units[chan]))
         
@@ -1566,11 +1536,12 @@ class SPMdata:
         """
 
         if chan not in self.channels:
-            print("show_channel: Invalid channel '{}'.".format(chan))
+            print(("show_channel: Invalid channel"
+                " '{}'.").format(chan))
             return
 
-        # only first 'limit' (or less) entries plotted, layloc stores
-        # layer indices
+        # only first 'limit' (or less) entries plotted, layloc
+        # stores layer indices
         if laylist:
             layloc = [i for i in set(laylist) if i < self.numlay]
             layloc = sorted(layloc)[:limit]
@@ -1586,9 +1557,11 @@ class SPMdata:
             if length % rowlimit > 0: nrows += 1
             ncols = rowlimit
 
-	    # create figure and axes
+        # create figure and axes
+        figtit = 'Channel: ' + chan
+        figtit += " [units: " + self.units[chan] + "]"
         fig, ax = plt.subplots(nrows, ncols, squeeze=False,
-            num='Channel: ' + chan + " [units: " + self.units[chan] + "]")
+            num=figtit)
 
 	    # how to scale plots
         if uniscale is None:
@@ -1612,8 +1585,8 @@ class SPMdata:
                 img = ax[ind].imshow(self.channels[chan][k],
                     aspect=aspect, vmin=vmin, vmax=vmax,
                     interpolation=interpolation, origin=origin)
-                ax[ind].set_title(
-                    chan + " - layer no. " + str(k % self.numlay))
+                ax[ind].set_title((chan + \
+                    " - layer no. " + str(k % self.numlay)))
                 
                 # add colorbar
                 divider = make_axes_locatable(ax[ind])
@@ -1624,7 +1597,8 @@ class SPMdata:
                 # increment counter
                 l += 1
             except KeyError as err:
-                print("show_channel: Key {} not known.".format(err))
+                print(("show_channel: Key"
+                    " {} not known.").format(err))
                 continue
 
         # improve layout and launch the interactive window
@@ -1687,8 +1661,8 @@ class SPMdata:
     # IMPORT, EXPORT
 
     def copy(self, *cl, ll=None):
-        """create a copy of spmdata containing only channels in 'cl'
-        and only layers in 'll'
+        """create a copy of spmdata containing only channels
+        in 'cl' and only layers in 'll'
         """
         
         # process lists of channels and layers
@@ -1704,9 +1678,9 @@ class SPMdata:
         copyspm = SPMdata()
         
         # copy auxiliary attributes
-        itemlist = ["versteps", "horsteps", "units"]
+        itemlist = ["ysteps", "xsteps", "units"]
         for item in itemlist:
-            setattr(copyspm, item, getattr(self, item))
+            setattr(copyspm, item, getattr(self, item).copy())
         
         # copy channels
         for chan, val in self.channels.items():

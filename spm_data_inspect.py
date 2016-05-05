@@ -346,6 +346,7 @@ class _MoveCutsVer:
 
     def __call__(self, event):
         # adjust layer according to mouse scroll
+        
         self.layer[0] += event.step
         if self.layer[0] >= self.numl: self.layer[0] = self.numl - 1
         if self.layer[0] < 0: self.layer[0] = 0

@@ -2,6 +2,7 @@ import struct
 import numpy as np
 import matplotlib.pyplot as plt
 import tkinter, os, math
+from scipy.ndimage import map_coordinates
 
 class InvalidFormatError(Exception): pass
 
@@ -67,6 +68,30 @@ ELEVB:"m", CURRB:"A", FREQB:"Hz", EXCIB:"V", OMEGB:"V?", AMPLB:"m", PHASB:"deg",
 UNKNOWN:"?"
 }
 
+def gen_resample_data_2d(inparr, xno, yno, xn, yn):
+    """perform upsampling 
+    """
+   
+    x = np.linspace(0, xno - 1, xn)
+    y = np.linspace(0, yno - 1, yn)
+    coords = np.meshgrid(x, y, indexing='ij')
+    arr = map_coordinates(inparr,
+        coords, order=0, cval=np.nan)
+        
+    return arr
+
+def gen_resample_data_3d(inparr, xno, yno, zno, xn, yn, zn):
+    """perform upsampling 
+    """
+   
+    x = np.linspace(0, xno - 1, xn)
+    y = np.linspace(0, yno - 1, yn)
+    z = np.linspace(0, zno - 1, zn)
+    coords = np.meshgrid(z, x, y, indexing='ij')
+    arr = map_coordinates(inparr,
+        coords, order=0, cval=np.nan)
+        
+    return arr
 
 def find_offind(indi, array, tolerancy):
     """finds appropriate offind by skipping initial NaNs

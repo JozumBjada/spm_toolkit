@@ -15,7 +15,7 @@ class SPMdataLayer:
         self.height = None
         
         # resolution of the data, i.e. (data range) / (number of data points)
-        self.horstep, self.verstep = 0, 0
+        self.xstep, self.ystep = 0, 0
 
         # self.channels = {"nameOfTheChannel, e.g. ELEV":pointerToChan, ...}
         self.channels = {}
@@ -45,7 +45,7 @@ class SPMdataLayer:
         copylay = SPMdataLayer()
         itemlist = ["xnum", "ynum", "xran", "yran", "height",
             "xoffset", "yoffset", "filename", "metadata",
-            "horstep", "verstep"]
+            "xstep", "ystep"]
         # more universal would be to use itemlist=locals() or
         # something like that, but the explicit form used above
         # makes it clear what is actually copied
@@ -106,8 +106,8 @@ class SPMdataLayer:
             print("load_data: Unknown data format.")
             
         # data resolution
-        self.horstep = self.xran / self.xnum
-        self.verstep = self.yran / self.ynum
+        self.xstep = self.xran / self.xnum
+        self.ystep = self.yran / self.ynum
 
     def _load_data_nanonis(self, filename):
         """load data from nanonis format file
