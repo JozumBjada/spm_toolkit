@@ -1,11 +1,10 @@
-from spm_data_layer import *
-#from scipy.ndimage import map_coordinates
-
+from .spm_data_layer import *
 
 """module containing loading routines for SPMdata structure
 """
 
-def load_data(spmdata, paths=(), suffixes=SUFFIXES, key=None, finer=True):
+def load_data(spmdata, paths=(), suffixes=SUFFIXES, key=None,
+    finer=True):
     """loads data from external files
 
     paths - name of the file or tuple of filenames storing
@@ -71,7 +70,24 @@ def load_data(spmdata, paths=(), suffixes=SUFFIXES, key=None, finer=True):
         spmdata.layers[i] = SPMdataLayer(name)
 
     # create 3D arrays in SPMdata
+    print("load_data: Embedding layers...")
     _embed_layers(spmdata, finer, key)
+
+    # set units for channels
+    if spmdata.layers:
+        for chan in spmdata.channels.keys():
+
+            # get the unit from the first layer
+            unit = spmdata.layers[0].units[chan]
+            
+            # if units from other layers and the same channel
+            # differ, let the user know, but do nothing
+            for lay in spmdata.layers:
+                if unit != lay.units[chan]:
+                    print(("load_data: Different units '{}' and "
+                        "'{}' for the same channel '{}'."
+                        ).format(unit, lay.units[chan], chan))
+            spmdata.units[chan] = unit
 
     # statistics
     namelen = len(validnames)
@@ -93,17 +109,6 @@ def _embed_layers(spmdata, finer=None, key=None):
     key - key for sorting the layers
     """
 
-    # in order to prevent data manipulation as much as
-    # possible, tolerancy parameter is introduced;
-    # if tolerancy were zero, then all data in all layers
-    # would be resampled due to 'finer' parameter and
-    # round-off errors for ysteps and xsteps; by
-    # suitable choice of tolerancy, the upsampling/down-
-    # sampling is performed only for those layers, whose
-    # ystep and/or xstep is different from the global
-    # ystep and xstep more then value of 'tolerancy'
-    tolerancy = 2
-
     # implicit sorting of layers is according to heights
     key = (lambda x: x.height) if key is None else key
 
@@ -113,11 +118,19 @@ def _embed_layers(spmdata, finer=None, key=None):
     # resolution in x- and y-direction
     xsteps = [lay.xstep for lay in spmdata.layers]
     ysteps = [lay.ystep for lay in spmdata.layers]
+
+    # original dimensions of data
+    xnumsold = [lay.xnum for lay in spmdata.layers]
+    ynumsold = [lay.ynum for lay in spmdata.layers]
     
     # do not resample?
     if finer is None:
         # do not care about possibly different data
         # resolution
+        print("load_data: Data are not resampled to the same "
+            "resolution, so inconsistencies may arise. "
+            "Especially xsteps and ysteps now do not correspoind "
+            "to real resolution of individual channels.")
         
 #        xstep, ystep = None, None
         
@@ -126,20 +139,38 @@ def _embed_layers(spmdata, finer=None, key=None):
         # and ysteps for spmdata are chosen as minima
         # of xsteps and ysteps over all layers
         xstep, ystep = min(xsteps), min(ysteps)
-        xnums = [lay.xnum for lay in spmdata.layers]
-        ynums = [lay.ynum for lay in spmdata.layers]
+        xnums, ynums = xnumsold.copy(), ynumsold.copy()
+#        xnums = [lay.xnum for lay in spmdata.layers]
+#        ynums = [lay.ynum for lay in spmdata.layers]
     
     # upsample or downsample?
     else:
         if finer:
             xstep, ystep = min(xsteps), min(ysteps)
+            print("load_data: Lower-resolution data will be "
+                "upsampled.")
         else:
             xstep, ystep = max(xsteps), max(ysteps)        
+            print("load_data: Higher-resolution data will be "
+                "downsampled.")
+
+#        xnums = [lay.xnum for lay in spmdata.layers]
+#        ynums = [lay.ynum for lay in spmdata.layers]
+#        print(("load_data: Original dimensions:\n\txnums = {}"
+#            "\n\tynums = {}").format(xnums, ynums))
+        print(("load_data: Original dimensions:\n\txnums = {}"
+            "\n\tynums = {}").format(xnumsold, ynumsold))
         
         # adjust array dimensions to contain data with 
         # possibly different resolution        
         xnums = [int(lay.xran / xstep) for lay in spmdata.layers]
         ynums = [int(lay.yran / ystep) for lay in spmdata.layers]
+        print(("load_data: New dimensions:\n\txnums = {}"
+            "\n\tynums = {}").format(xnums, ynums))
+        
+#    print("xnums: ", xnums)
+#    print("aha: ", "\n".join([str((lay.xnum, xn, lay.xran, xstep, lay.filename)) for lay, xn in zip(spmdata.layers, xnums)]))
+    print("\n".join([str((lay.xnum, xn, lay.xran, lay.xoffset, lay.filename)) for lay, xn in zip(spmdata.layers, xnums)]))
         
     # dimensions of new arrays
     xnum, ynum = max(xnums), max(ynums)
@@ -153,6 +184,12 @@ def _embed_layers(spmdata, finer=None, key=None):
     spmdata.xsteps = {chan:xstep for chan in set(chanlist)}
     spmdata.ysteps = {chan:ystep for chan in set(chanlist)}
 
+    # update dimensions in layers; this has to be done before the
+    # spmdata.set_chan is called and before the loop:
+    # for chan in ... etc.
+    for i, lay in enumerate(spmdata.layers):
+        lay.xnum, lay.ynum = xnums[i], ynums[i]
+
     # for each channel...
     for chan in set(chanlist):
         # create empty 3D array
@@ -163,8 +200,9 @@ def _embed_layers(spmdata, finer=None, key=None):
         for i, lay in enumerate(spmdata.layers):
             if chan not in lay.channels.keys(): continue
             
-            if abs(xnums[i] - lay.xnum) <= tolerancy and \
-                abs(ynums[i] - lay.ynum) <= tolerancy:
+#            if xnums[i] == lay.xnum and ynums[i] == lay.ynum:
+            if  xnums[i] == xnumsold[i] and \
+                ynums[i] == ynumsold[i]:
                 # if no resampling is necessary, use directly
                 # data from the layer
                 arrlay = lay.channels[chan]
@@ -174,15 +212,16 @@ def _embed_layers(spmdata, finer=None, key=None):
 #                    " resampled").format(i))
 
                 xno, yno = lay.channels[chan].shape                               
-                arrlay = gen_resample_data_2d(lay.channels[chan],
+                arrlay = gen_resample_data_2d(
+                    lay.channels[chan].copy(),
                     xno, yno, xnums[i], ynums[i])
 
             # store data from layers to the array
             arr[i, :xnums[i], :ynums[i]] = arrlay.copy()
-            lay.setchan(chan, arr[i])
-            
-        # save the array to the structure
-        spmdata.setchan(chan, arr)
+                            
+        # save the array to the structure and update pointers in
+        # layers
+        spmdata.set_chan(chan, arr, updatelayers=True)
 
 def _check_filenames(filenames, suffixes):
     """check whether filenames are valid
@@ -195,7 +234,7 @@ def _check_filenames(filenames, suffixes):
         if os.path.isfile(name) and name.endswith(sufx):
             valfilenames.append(name)
         else:
-            print(("_check_filenames: Name '{}' is not a "
+            print(("load_data: Name '{}' is not a "
                 "valid file name.").format(name))
     return valfilenames 
 
@@ -215,7 +254,7 @@ def _process_filenames(suffixes, pathnames='cwd'):
             # get files from the current working directory
             pathnamesloc = {os.path.join(os.getcwd(), item)
                 for item in os.listdir(os.getcwd())}
-            print(("_process_filenames: Data read from the "
+            print(("load_data: Data read from the "
                "current working directory: {}").format(
                os.getcwd()))
         elif isinstance(pathnames, str):
@@ -224,9 +263,10 @@ def _process_filenames(suffixes, pathnames='cwd'):
             if os.path.isdir(pathnames):
                 pathnamesloc = {os.path.join(pathnames, item)
                     for item in os.listdir(pathnames)}
-                print(("_process_filenames: Data read from "
+                print(("load_data: Data read from "
                     "directory: {}").format(pathnames))
-            # if pathnames contains a name of a file, load that file
+            # if pathnames contains a name of a file, load that
+            # file
             else:
                 pathnamesloc = set([pathnames])
         elif all(map(lambda x: isinstance(x, str), pathnames)):
@@ -235,7 +275,7 @@ def _process_filenames(suffixes, pathnames='cwd'):
         else:
             raise TypeError
     except TypeError:
-        print("_process_filenames: Invalid data file names.")
+        print("load_data: Invalid data file names.")
         pathnamesloc = []
 
     return pathnamesloc

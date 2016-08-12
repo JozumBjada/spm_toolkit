@@ -1,14 +1,44 @@
-from spm_data_cut1d import *
+from .spm_data_cut1d import *
 import copy
 from mpl_toolkits.axes_grid1 import make_axes_locatable    
 from scipy.ndimage import rotate as ndrotate
 
+def _vector_handedness(point1, point2, point3):
+    """ if vectors (point1 - point2) and (point3 - point2)
+    form a left-handed basis with vector (0, 0, -1), return
+    the right-handed counterpart of (point1, point2, point3),
+    otherwise return (point1, point2, point3)
+    """
+    
+    vec12 = point1 - point2
+    vec32 = point3 - point2
+    crossvec = np.cross(vec12, vec32)
+
+    rvec = np.array([0, 0, 1])
+    scalprod = np.dot(crossvec, rvec)      
+#    print("scalprod: ", scalprod)
+              
+    if abs(scalprod) < 1e-9:
+        rvec = np.array([0, 1, 0])
+        scalprod = np.dot(crossvec, rvec)
+        if scalprod < 0:        
+            print("_vector_handedness: Control points formed a left-hand basis,"
+                " so they were reordered.")
+            point3, point1 = point1, point3
+            crossvec *= -1    
+    elif scalprod < 0:
+        print("_vector_handedness: Control points formed a left-hand basis,"
+            " so they were reordered.")
+        point3, point1 = point1, point3
+        crossvec *= -1    
+    
+    return point1, point2, point3, crossvec
 
 def _modify_pos(nvec, npos, arrshape):
     """return control points for cut through entire plane;
     method used is quite crude, since it does not determine
     intersection of cutting plane and data cuboid, but
-    just adds the maximum possible range, i.e. space diagonal,
+    just adds the maximum possible range, i.e. a space diagonal,
     in both directions; resulting cut has to be then strip_nans-ed
     
     nvec - normal vector of the form (x, y, z)
@@ -38,16 +68,18 @@ def _modify_pos(nvec, npos, arrshape):
     point2 = npos - diag*vec1 + diag*vec2
     point3 = npos + diag*vec1 + diag*vec2
 
-#        print("vec1, vec2: ", vec1, vec2)
-#        print("point1, point2, point3: ", point1, point2, point3)    
+#    print("vec1, vec2: ", vec1, vec2)
+#    print("point1, point2, point3: ", point1, point2, point3)    
 
     return point1, point2, point3
 
 def average_layers(spmdata, laylist=None):
-    """average layers of SPMdata structure and return Cut2D structure containing results
+    """average layers of SPMdata structure and return Cut2D
+    structure containing results
     
     spmdata - input SPMdata structure
-    laylist - which layers to choose for averaging; if None, then all layers are used
+    laylist - which layers to choose for averaging;
+        if None, then all layers are used
     """
     
     res = Cut2D()
@@ -59,101 +91,126 @@ def average_layers(spmdata, laylist=None):
     return res
     
 
+def _process_cut_coords(posx, posy, posz,
+    delta, deltaz, arrshape=None):
+    """based on control points stored in posz, posx, posy
+    create sampling points and store them in 2D arrays
+    posxl, posyl, poszl
+    
+    posx - list containing x-coordinates of three control points
+    posy - list containing y-coordinates of three control points
+    posz - list containing z-coordinates of three control points
+    delta - approx. step in x- and y-directions
+    deltaz - approx. step in z-direction
+    arrshape - shape (3-tuple) of the data cuboid; if None, then 
+        cutting is done in the selection parallelogram, otherwise
+        the cut is performed through the whole cutting plane
+    """
+       
+    minlen = min(len(posx), len(posy), len(posz))
+    
+    if minlen < 3:
+        print("_process_cut_coords: Not enough control points.")
+        return [], [], []
+    
+    if minlen != max(len(posx), len(posy), len(posz)):
+        print("_process_cut_coords: Unequal lengths of "
+            "coordinate lists. Only first 3 elements used.")
+
+    # reorder the three control points so that selection is
+    # independent of the original order picked by e.g.
+    # inspect_channels (assumes the middle point of selection
+    # is also the middle point in lists):
+    point1, point2, point3 = np.array(
+        [posx[:3], posy[:3], posz[:3]]).T
+    point1, point2, point3, nvec = _vector_handedness(
+        point1, point2, point3)            
+    if arrshape is not None:
+        point1, point2, point3 = _modify_pos(
+            nvec, point2, arrshape)
+        point1, point2, point3 = _vector_handedness(
+            point1, point2, point3)[:3]
+    posx, posy, posz = np.array([point1, point2, point3]).T
+   
+    # unlike in _process_cut_coords for Cut1D, here these
+    # lists contain two lists of coordinates
+    posxl, posyl, poszl = [], [], []   
+    
+    # sampling of lines connecting control points
+    for i in range(2):
+    
+        # how many sampling points in each dimension?
+        auxnumz = round(abs(posz[i+1] - posz[i])/deltaz)
+        auxnumx = round(abs(posx[i+1] - posx[i])/delta)
+        auxnumy = round(abs(posy[i+1] - posy[i])/delta)
+        
+        # we need the same number of sampling points in
+        # each dimension; (int(...) here is important)
+        num = int(max(auxnumx, auxnumy, auxnumz))
+        
+        if num == 0:
+            print("_process_cut_coords: Identical control points.")
+            continue
+        
+        # calculate consistent sampling steps
+        dx = (posx[i+1] - posx[i]) / num
+        dy = (posy[i+1] - posy[i]) / num
+        dz = (posz[i+1] - posz[i]) / num
+         
+        # calculate sampling points
+        auxlz = [posz[i] + dz*j for j in range(num)]
+        auxlx = [posx[i] + dx*j for j in range(num)]
+        auxly = [posy[i] + dy*j for j in range(num)]
+
+        # update lists of points
+        poszl.append(auxlz)
+        posxl.append(auxlx)
+        posyl.append(auxly)
+
+    # first line
+    fstline = np.array([poszl[0], posxl[0], posyl[0]])
+    
+    # second line
+    scnline = np.array([poszl[1], posxl[1], posyl[1]])
+    
+    # delta line
+    deltaline = scnline - scnline[:,0, np.newaxis]
+
+    array = fstline.T[:, :, np.newaxis] + deltaline
+    return array[:,1,:], array[:,2,:], array[:,0,:], \
+        point1, point2, point3
+
 class Cut2D:
+    "(not only) 2D cuts of SPMdata structure"
 
     def __init__(self):
         self.channels = {}
         self.posl = []
         self.minmax = {}
 
-    def rotate(self, angle):
-        """rotate cuts counter-clockwise by 'angle' specified in degrees
+    def rotate(self, angle, val=0):
+        """rotate cuts counter-clockwise by 'angle' specified
+        in degrees
+        
+        val - auxiliary values that is used temporarily instead
+            of NaNs, so that it can be rotated by ndrotate
         """
         
         for chan in self.channels:
-            self.channels[chan] = ndrotate(self.channels[chan], angle, cval=np.nan)
-
-    def _process_cut_coords(self, posx, posy, posz, delta, deltaz, arrshape=None):
-        """based on control points stored in posz, posx, posy create sampling points
-        and store them in 2D arrays posxl, posyl, poszl
-        
-        posx - list containing x-coordinates of three control points
-        posy - list containing y-coordinates of three control points
-        posz - list containing z-coordinates of three control points
-        delta - approx. step in x- and y-directions
-        deltaz - approx. step in z-direction
-        arrshape - shape (3-tuple) of the data cuboid; if None, then 
-            cutting is done in the selection parallelogram, otherwise
-            the cut is performed through the whole cutting plane
-        """
-           
-        minlen = min(len(posx), len(posy), len(posz))
-        
-        if minlen < 3:
-            print("_process_cut_coords: Not enough control points.")
-            return [], [], []
-        
-        if minlen != max(len(posx), len(posy), len(posz)):
-            print("_process_cut_coords: Unequal lengths of coordinate lists. "
-                "Only first 3 elements used.".format(minlen))
-
-        # reorder the three control points so that selection is independent of
-        # the original order picked by e.g. inspect_channels (assumes the middle
-        # point of selection is also the middle point in lists):
-        point1, point2, point3 = np.array([posx[:3], posy[:3], posz[:3]]).T        
-        point1, point2, point3, nvec = vector_handedness(point1, point2, point3)            
-        if arrshape is not None:
-            point1, point2, point3 = _modify_pos(nvec, point2, arrshape)
-            point1, point2, point3 = vector_handedness(point1, point2, point3)[:3]
-        posx, posy, posz = np.array([point1, point2, point3]).T
-
-#        print("point1, point2, point3: ", point1, point2, point3)    
-#        print("ha, nvec: ", np.cross(point1 - point2, point3 - point2), nvec)
-       
-        # unlike in _process_cut_coords for Cut1D, here these lists contain
-        # two lists of coordinates
-        posxl, posyl, poszl = [], [], []   
-        
-        # sampling of lines connecting control points
-        for i in range(2):
-        
-            # how many sampling points in each dimension?
-            auxnumz = round(abs(posz[i+1] - posz[i])/deltaz)
-            auxnumx = round(abs(posx[i+1] - posx[i])/delta)
-            auxnumy = round(abs(posy[i+1] - posy[i])/delta)
+            arr = self.channels[chan].copy()
             
-            # we need the same number of sampling points in each dimension
-            num = int(max(auxnumx, auxnumy, auxnumz)) # int(...) here is important
+            # ndrotate needs arrays with no NaNs, so we for a while
+            # replace NaNs with val
+            tolerancy = abs(np.nanmax(arr) - np.nanmin(arr)) * 1e-4
+            arr[np.isnan(arr)] = val
+            arr = ndrotate(arr, angle, cval=val)                
+            arr[np.abs(arr - val) < tolerancy] = np.nan
             
-            if num == 0:
-                print("_process_cut_coords: Same control points.")
-                continue
-            
-            # calculate consistent sampling steps
-            dx = (posx[i+1] - posx[i]) / num
-            dy = (posy[i+1] - posy[i]) / num
-            dz = (posz[i+1] - posz[i]) / num
-             
-            # calculate sampling points
-            auxlz = [posz[i] + dz*j for j in range(num)]
-            auxlx = [posx[i] + dx*j for j in range(num)]
-            auxly = [posy[i] + dy*j for j in range(num)]
-
-            # update lists of points
-            poszl.append(auxlz)
-            posxl.append(auxlx)
-            posyl.append(auxly)
-
-        fstline = np.array([poszl[0], posxl[0], posyl[0]]) # first line
-        scnline = np.array([poszl[1], posxl[1], posyl[1]]) # second line
-        deltaline = scnline - scnline[:,0, np.newaxis] # delta line
-    
-        array = fstline.T[:, :, np.newaxis] + deltaline
-        return array[:,1,:], array[:,2,:], array[:,0,:], point1, point2, point3
+            self.channels[chan] = arr.copy()
 
     def create_cut_rotate(self, spmdata, posz, posx, posy):
-        """create 2D cut through spmdata, cut covers the whole intersection
-        of the cutting plane and spmdata cuboid
+        """create 2D cut through spmdata, cut covers the whole
+        intersection of the cutting plane and spmdata cuboid
         
         spmdata - SPMdata instance through which the cut is done
         posx - x-coordinate 2D array of sampling points
@@ -168,14 +225,16 @@ class Cut2D:
             return
         
         if minlen != max(len(posx), len(posy), len(posz)):
-            print("create_cut_rotate: Unequal lengths of coordinate lists. "
-                "Only first 3 elements used.".format(minlen))
+            print("create_cut_rotate: Unequal lengths of"
+                " coordinate lists. Only first 3 elements used.")
 
-        # reorder the three control points so that selection is independent of
-        # the original order picked by e.g. inspect_channels (assumes the middle
-        # point of selection is also the middle point in lists):
-#        points = np.array([posz[:3], posx[:3], posy[:3]]).T # each row corresponds to one point
-        points = np.array([posx[:3], posy[:3], posz[:3]]).T # each row corresponds to one point
+        # reorder the three control points so that selection is
+        # independent of the original order picked by e.g.
+        # inspect_channels (assumes the middle point of selection
+        # is also the middle point in lists) (each row in
+        # 'points' corresponds to one point):
+        #points = np.array([posz[:3], posx[:3], posy[:3]]).T
+        points = np.array([posx[:3], posy[:3], posz[:3]]).T
         vec21 = points[0] - points[1]
         vec23 = points[2] - points[1]
         
@@ -231,83 +290,141 @@ class Cut2D:
             
             # TODO
             
-            plt.imshow(arr[par])
-            plt.show()
+#            plt.imshow(arr[par])
+#            plt.show()
             
-            arr[np.isnan(arr)] = 0
-            arr = ndrotate(arr, phi, axes=(2,1))#, cval=np.nan) #(1,0)
+            # ndrotate needs arrays with no NaNs, so we for a while
+            # replace NaNs with val
+            tolerancy = abs(np.nanmax(arr) - np.nanmin(arr)) * 1e0
+            val = np.nanmin(arr) - 1*abs(np.nanmax(arr) - np.nanmin(arr))
+            
+            arr[np.isnan(arr)] = val
+            arr = ndrotate(arr, phi, axes=(2,1), cval=val) #(1,0)
 #            print("arr.shape: ", arr.shape)
 
-            plt.imshow(arr[par])
-            plt.show()
+#            plt.imshow(arr[par])
+#            plt.show()
 
-            arr = ndrotate(arr, rho, axes=(0,1))#, cval=np.nan)
+            arr = ndrotate(arr, rho, axes=(0,1), cval=val)
+            arr[np.abs(arr - val) < tolerancy] = np.nan
+            
             self.channels[chan] = arr[par]
 
-            print("arr.shape: ", arr.shape)
-            plt.imshow(arr[par])
-            plt.show()
+#            print("arr.shape: ", arr.shape)
+#            plt.imshow(arr[par])
+#            plt.show()
 
+    def create_cut(self, spmdata, posz, posx, posy,
+        delta=1, deltaz=1, order=0, align=False, entire=True):
+        """create 2D cut through spmdata
+        
+        spmdata - SPMdata instance through which the cut is done
+        posx - x-coordinate list of control points
+        posy - y-coordinate list of control points
+        posz - z-coordinate list of control points
+        order - the order of interpolation ranging
+            from 0 to 5
+        delta - sampling step in x- and y-direction;
+            e.g. 'delta' = 3 means that approx. every third data
+            point will be taken, value of 'delta' is only an
+            advice for the routine to calculate actual sampling
+            step, which might differ in the end
+        deltaz - sampling step in z-direction, for more see 'delta'
+        align - if True, arrays corresponding to channels are
+            aligned, so that they are not skewed
+        entire - if True, then the cut is performed through the
+            entire bulk of data cuboid, otherwise the cut is a
+            parallelogram defined by posx, posy, posz only 
+        """
+        
+        if not posx or not posy or not posz:
+            print("create_cut: Not enough control points.")
+            return
+        
+        # creation of sampling 2D arrays
 
+        # 2D cut dimensions are determined with help of the shape
+        # of the first array appearing in spmdata.channels
+        if entire:
+            shape = list(spmdata.channels.values())[0].shape
+        else:
+            shape = None
+        px, py, pz, *points = _process_cut_coords(
+            posx, posy, posz, delta, deltaz, shape)
 
-    def create_cutzxy_raw(self, spmdata, posz, posx, posy, interpolate=0):
+#        print("BO")
+
+        # creation of the cut itself
+        self.create_cut_raw(spmdata, pz, px, py, order=order)
+        self.posx, self.posy, self.posz = px, py, pz
+        
+        # aligning
+        if align: self.align_channels(*points)
+
+    def create_cut_raw(self, spmdata,
+        posz, posx, posy, order=0):
         """create 2D cut through spmdata
         
         spmdata - SPMdata instance through which the cut is done
         posx - x-coordinate 2D array of sampling points
         posy - y-coordinate 2D array of sampling points
         posz - z-coordinate 2D array of sampling points
-        interpolate - the order of interpolation ranging from 0 to 5
+        order - the order of interpolation ranging from 0 to 5
         """
         
 #        minlen = min(len(posx), len(posy), len(posz))
 #        if minlen == 0:
-#            print("create_cutzxy_raw: No positions specified.")
+#            print("create_cut_raw: No positions specified.")
 #            return
 #        
         shapes = set([posx.shape, posy.shape, posz.shape])
         if len(shapes) != 1:
-            print("create_cutzxy_raw: Unequal shapes of coordinate arrays.")
+            print("create_cut_raw: Unequal shapes of"
+                " coordinate arrays.")
             return
                 
         shapes = shapes.pop()
         if len(shapes) != 2:
-            print("create_cutzxy_raw: Coordinate arrays are not 2D arrays.")
+            print("create_cut_raw: Coordinate arrays are"
+                " not 2D arrays.")
             return
             
-        self.minmax = {chan: (np.nanmin(val), np.nanmax(val)) for chan, val in spmdata.channels.items()}
+        self.minmax = {chan: (np.nanmin(val), np.nanmax(val))
+            for chan, val in spmdata.channels.items()}
         
         self.posx = posx
         self.posy = posy
         self.posz = posz        
 
         for chan, val in spmdata.channels.items():
-            # BACHA, BACHA, BACHA!!! i zde se projevuje prehozeni xove a yove souradnice
+            # BACHA, BACHA, BACHA!!! i zde se projevuje prehozeni
+            # xove a yove souradnice
             self.channels[chan] = map_coordinates(val,
                 np.array([self.posz, self.posy, self.posx]), 
-                order=interpolate, mode='constant', cval=np.nan)
+                order=order, mode='constant', cval=np.nan)
             # nearest-neighbour approximation
-#            self.channels[chan] = val[self.posz, self.posy, self.posx]        
-        
-    def align_channels(self, point1, point2, point3, interpolation=1):
+#            self.channels[chan] = val[self.posz, self.posy, self.posx]    
+
+    def align_channels(self, point1, point2, point3, order=1):
         """pad array for all channels by NANs, NANs are padded
-        in such a way that resulting array has the same geometrical
-        shape as the original cut of spm data
+        in such a way that resulting array has the same
+        geometrical shape as the original cut of spm data
         
         point1, point2, point3 - control points,
-            for 2D cut there are three control points, the first one
-            marks the origin of the cutting parallelogram
-        interpolation - order of interpolating polynomial, it can
-            range from 0 to 5, but for order >= 2 I encountered problems
-            for parallelograms determined by segments whose angle was
-            greater than 90 degrees
+            for 2D cut there are three control points, the first
+            one marks the origin of the cutting parallelogram
+        order - order of interpolating polynomial, it can
+            range from 0 to 5, but for order >= 2 I encountered
+            problems for parallelograms determined by segments
+            whose angle was greater than 90 degrees
         """
 
-        # compute cosphi, i.e. cosine of the angle between line segments
-        # determined by control points
+        # compute cosphi, i.e. cosine of the angle between line
+        # segments determined by control points
         veca = point1 - point2
         vecb = point3 - point2
-        cosphi = np.dot(veca, vecb) / (np.linalg.norm(veca) * np.linalg.norm(vecb))
+        cosphi = np.dot(veca, vecb) 
+        cosphi /= (np.linalg.norm(veca) * np.linalg.norm(vecb))
         
         # align each channel
         for chan, val in self.channels.items():
@@ -329,118 +446,31 @@ class Cut2D:
                 (xnum, ynum), dtype=float)
                 
             # new values
-            aux = map_coordinates(val, [px, py], order=interpolation, cval=np.nan)
+            aux = map_coordinates(val, [px, py], order=order,
+                cval=np.nan)
             # OPET DILEMA x vs. y                
 
             # reallocate cut array
             for xi in range(xnum):
                 yi = math.floor(fun(xi))
                 auxf[xi, yi:yi + ynum] = aux[xi]
+                
+                print("AHOJ")
 
             # save reallocated array
             self.channels[chan] = auxf
             
-#    def align_channels(self, posx, posy, posz, interpolation=1):
-#        """pad array for all channels by NANs, NANs are padded
-#        in such a way that resulting array has the same geometrical
-#        shape as the original cut of spm data
-#        
-#        posx, posy, posz - x-, y- and z-coordinates of control points,
-#            for 2D cut there are three control points, the first one
-#            marks the origin of the cutting parallelogram
-#        interpolation - order of interpolating polynomial, it can
-#            range from 0 to 5, but for order >= 2 I encountered problems
-#            for parallelograms determined by segments whose angle was
-#            greater than 90 degrees
-#        """
-
-#        # compute cosphi, i.e. cosine of the angle between line segments
-#        # determined by control points
-#        points = np.array([posz, posx, posy]).T # each row corresponds to one point
-#        veca = points[0] - points[1]
-#        vecb = points[2] - points[1]
-#        cosphi = np.dot(veca, vecb) / (np.linalg.norm(veca) * np.linalg.norm(vecb))
-#        
-#        # align each channel
-#        for chan, val in self.channels.items():
-#            xnum, ynum = val.shape            
-
-#            dynum = xnum * abs(cosphi)
-#            auxf = np.empty((xnum, ynum + math.floor(dynum)))
-#            auxf.fill(np.nan)
-
-#            if cosphi >= 0:            
-#                fun = lambda i: dynum*(xnum - i - 1)/xnum
-#            else:
-#                fun = lambda i: dynum*(i)/xnum
-
-#            # VERSION 1 - START            
-##            aux = val
-#            # VERSION 1 - END
-#            
-#            # VERSION 2 - START
-#            px = np.fromfunction(lambda i, j: i,
-#                (xnum, ynum), dtype=float)
-#            py = np.fromfunction(lambda i, j: j - (fun(i) % 1),
-#                (xnum, ynum), dtype=float)
-#                
-#            # OPET DILEMA x vs. y
-#                
-#            aux = map_coordinates(val, [px, py], order=interpolation)
-##             VERSION 2 - END
-
-#            for xi in range(xnum):
-#                yi = math.floor(fun(xi))
-#                auxf[xi, yi:yi + ynum] = aux[xi]
-
-#            self.channels[chan] = auxf
-
-        
-    def create_cutzxy(self, spmdata, posz, posx, posy, delta=1, deltaz=1, interpolate=0, align=False, entire=True):
-        """create 2D cut through spmdata
-        
-        spmdata - SPMdata instance through which the cut is done
-        posx - x-coordinate list of control points
-        posy - y-coordinate list of control points
-        posz - z-coordinate list of control points
-        interpolate - the order of interpolation ranging from 0 to 5
-        delta - sampling step in x- and y-direction, e.g. 'delta' = 3
-            means that approx. every third data point will be 
-            taken, value of 'delta' is only an advice for the routine to 
-            calculate actual sampling step, which might differ in the end
-        deltaz - sampling step in z-direction, for more see 'delta'
-        align - if True, arrays corresponding to channels are aligned,
-            so that they are not skewed
-        entire - if True, then the cut is performed through the entire bulk
-            of data cuboid, otherwise the cut is a parallelogram defined by
-            posx, posy, posz only 
-        """
-        
-        if not posx or not posy or not posz:
-            print("create_cutzxy: Not enough control points.")
-            return
-        
-        # creation of sampling 2D arrays
-
-        # 2D cut dimensions are determined with help of the shape of the first array
-        # appearing in spmdata.channels.keys()
-        shape = list(spmdata.channels.values())[0].shape if entire else None
-        self.posx, self.posy, self.posz, *points = self._process_cut_coords(
-                                                        posx, posy, posz, delta, deltaz, shape)
-
-        # creation of the cut itself
-        self.create_cutzxy_raw(spmdata, self.posz, self.posx, self.posy, interpolate=interpolate)  
-        
-        # aligning
-        if align: self.align_channels(*points)
-
-    def show_channels(self, *cl, rescale=True, interpolation='none'):
+    def show_channels(self, *cl, rescale=True, 
+        interpolation='none'):
         """plot 2D cut of channels
         
-        cl - list of channels to show; if empty, then all channels are chosen
-        rescale - if False, imshow uses implicit colouring according to the data,
-            if True, than plot is rescaled according to original spm data, so that
-            colours of the cut are identical to that in the original data
+        cl - list of channels to show; if empty, then all
+            channels are chosen
+        rescale - if False, imshow uses implicit colouring
+            according to the data;
+            if True, than plot is rescaled according to original
+            spm data, so that colours of the cut are identical to
+            that in the original data
         interpolation - how to interpolate values in imshow
         """
         
@@ -453,22 +483,28 @@ class Cut2D:
             
         # create figure
         fig, subfiglist = plt.subplots(1, len(cl),
-                            num="1D Cut - channel: " + ", ".join(cl))
+            num="1D Cut - channel: " + ", ".join(cl))
         if len(cl) == 1: subfiglist = [subfiglist]
         
         # plot each valid channel
         for i, chan in enumerate(cl):            
             # use the scale of the original SMPdata?
-            vmin, vmax = self.minmax[chan] if rescale else (None, None)
+            if rescale:
+                vmin, vmax = self.minmax[chan]
+            else:
+                vmin, vmax = (None, None)
             
             # create image with title
-            img = subfiglist[i].imshow(self.channels[chan], aspect='equal',
-                vmin=vmin, vmax=vmax, interpolation=interpolation)                
-            subfiglist[i].set_title("Channel: {}[units: {}]".format(chan, UNITS[chan]))
+            img = subfiglist[i].imshow(self.channels[chan],
+                aspect='equal', vmin=vmin, vmax=vmax,
+                interpolation=interpolation, origin='lower')                
+            subfiglist[i].set_title(
+                "Channel: {}[units: {}]".format(chan, UNITS[chan]))
             
             # colorbar
             divider = make_axes_locatable(subfiglist[i])
-            ax_cb = divider.append_axes("right", size="20%", pad=0.2)
+            ax_cb = divider.append_axes("right",
+                size="20%", pad=0.2)
             plt.colorbar(img, cax=ax_cb)
             
 #            subfiglist[i].set_xlabel("No. of steps")
@@ -479,8 +515,8 @@ class Cut2D:
         plt.show()
 
     def strip_nans(self, ref=None):        
-        """strip NaNs from arrays corresponding to all channels, so that
-        all valid data are preserved
+        """strip NaNs from arrays corresponding to all channels,
+        so that all valid data are preserved
         
         ref - reference channel which is used for determination
             of a clip frame
@@ -497,8 +533,8 @@ class Cut2D:
 #        print("ref: ", ref)
 #        
         for chan in self.channels:
-            self.channels[chan] = self.channels[chan][mask1][:, mask0]
-#            print("shape 2: ", self.channels[chan].shape)
+            self.channels[chan] = self.channels[chan][
+                mask1][:, mask0]
 
         return ref
         
@@ -512,7 +548,8 @@ class Cut2D:
             
         # nparray ma sve procedury pro export dat
             
-        print("export_data: Data exported to file: {}".format(filename))
+        print(("export_data: Data exported to file:"
+            " {}").format(filename))
         
     def import_data(self, filename):
         """import data from external file

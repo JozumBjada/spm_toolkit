@@ -1,4 +1,4 @@
-from spm_data_cuts import *
+from .spm_data_cuts import *
 
 class LineData:
     """1D data
