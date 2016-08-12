@@ -1,9 +1,9 @@
 import sys
 sys.path[0] = '..'
 
-from code.spmdata.spm_data_aux import *
-from code.registration.registration_class import *
-from code.registration.registration_compare import *
+from code.spm_data_aux import *
+from code.registration_class import *
+from code.registration_compare import *
 
 FIRST_SET_OF_DATA  = "/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration/data_uncharged"
 SECOND_SET_OF_DATA = "/home/jaroslav/Plocha/FZU/MartinSvecProgramy/MartinSvecData/4jarda/registration/data_charged/shrange"
