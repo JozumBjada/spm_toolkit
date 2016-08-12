@@ -15,3 +15,5 @@ List of files:
 * **registration_base.py** - auxiliary routines for registration
 * **registration_class.py** - RegBlock class code
 * **registration_compare.py** - CompareRegBlocks class code
+
+**NOTE:** All files assume they are in the same directory. Moreover, this directory contains empty **\_\_init\_\_.py** file so that the directory is a package.
