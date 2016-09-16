@@ -709,8 +709,7 @@ def align_forback(spmdata, *cl, rchan=None, same=True, rlay=0,
         for chan in spmdata.channels.keys()
         if not is_backward_scan(chan) and \
         get_backward_scan(chan) in spmdata.channels.keys()]
-    if cl:
-        claux = [chan for chan in claux if chan in cl]
+    if cl: claux = [chan for chan in claux if chan in cl]
     cl = claux
     print("align_forback: Channels to be aligned: {}.".format(cl))
     
@@ -751,6 +750,9 @@ def align_forback(spmdata, *cl, rchan=None, same=True, rlay=0,
         # channel
         else:
             xshift[i], yshift[i] = rxshift, ryshift
+
+        # NASLEDUJICI RADEK VYHODIT!!!
+#        xshift[i], yshift[i] = yshift[i], xshift[i]
 
         # if fxnum != bxnum or fynum != bynum, then
         # resulting 3D arrays are not ensured to be
@@ -901,6 +903,10 @@ def align_offsets(self, *cl):
     #    xsteps = [ran / xdimnew for ran in self.xranges]
     #    ysteps = [ran / ydimnew for ran in self.yranges]
         xstep, ystep = self.xsteps[chan], self.ysteps[chan]
+        
+#        yoffsets, xoffsets = xoffsets, yoffsets
+        
+#        print("xstep, ystep: ", xstep, ystep, xstep == ystep)
 
         xdimnew += math.ceil((max(xoffsets) - min(xoffsets)) / xstep)
         ydimnew += math.ceil((max(yoffsets) - min(yoffsets)) / ystep)

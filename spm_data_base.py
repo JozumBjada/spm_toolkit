@@ -9,6 +9,10 @@ class InvalidFormatError(Exception): pass
 # file format suffixes
 SUFFIXES = ("sxm",)
 
+# suffix for channel names that have backward direction
+BCKSUFF = 'b'
+BCKSUFF_VAR = 'B'
+
 ## multiples
 #NM = 10e-9  # nano
 
@@ -32,9 +36,9 @@ UNITS = {}
 # create forward and backward scan channels and units
 for key, (val, unit) in CHAN_DICT.items():
     globals()[key] = val
-    globals()[key + 'B'] = val + 'b'
+    globals()[key + BCKSUFF_VAR] = val + BCKSUFF
     UNITS[val] = unit
-    UNITS[val + 'b'] = unit
+    UNITS[val + BCKSUFF] = unit
 
 # STATIC DEFINITION OF CHANNEL NAME CONSTANTS AND APPROPRIATE
 # UNITS:
@@ -49,7 +53,7 @@ for key, (val, unit) in CHAN_DICT.items():
 #PHAS = "phas"   # Phase
 #ZREL = "zrel"   # Z rel
 
-#UNKNOWN = "unknown"
+UNKNOWN = "unknown"
 
 ## backward scan channels
 #ELEVB = "elevb"   # Z backward
@@ -61,12 +65,12 @@ for key, (val, unit) in CHAN_DICT.items():
 #PHASB = "phasb"   # Phase backward
 #ZRELB = "zrelb"   # Z rel backward
 
-## units
-#UNITS = {ELEV:"m", CURR:"A", FREQ:"Hz", EXCI:"V", OMEG:"V?",
-#    AMPL:"m", PHAS:"deg", ZREL:"m", ELEVB:"m", CURRB:"A",
-#    FREQB:"Hz", EXCIB:"V", OMEGB:"V?", AMPLB:"m", PHASB:"deg",
-#    ZRELB:"m", UNKNOWN:"?"
-#}
+# units
+UNITS = {ELEV:"m", CURR:"A", FREQ:"Hz", EXCI:"V", OMEG:"V?",
+    AMPL:"m", PHAS:"deg", ELEVB:"m", CURRB:"A", FREQB:"Hz", 
+    EXCIB:"V", OMEGB:"V?", AMPLB:"m", PHASB:"deg",
+    UNKNOWN:"?"
+}
 
 # FORWARD AND BACKWARD CHANNEL INQUIRY ROUTINES
 
@@ -74,13 +78,13 @@ def is_backward_scan(chan):
     """decides whether string 'chan' denotes backward scan
     """
     
-    return chan.endswith('b')
+    return chan.endswith(BCKSUFF)
     
 def get_backward_scan(chan):
     """returns name of the backward-scan version of channel 'chan'
     """
     
-    return chan + 'b'
+    return chan + BCKSUFF
 
 def get_forward_scan(chan):
     """returns name of the forward-scan version of channel 'chan',

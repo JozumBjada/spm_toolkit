@@ -136,10 +136,6 @@ class CompareRegBlocks():
         # accordingly
         self.reconstructed = True
 
-#        self.reg1.print_points()        
-#        self.reg1.print_origin()
-#        self.reg1.print_pars()
-        
     def dereconstruct_arrays(self):
         """the effective inverse to reconstruct_arrays; arrtmps
         are reset to have the same values as arrorigs and flag

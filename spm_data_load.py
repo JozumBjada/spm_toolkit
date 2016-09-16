@@ -132,16 +132,12 @@ def _embed_layers(spmdata, finer=None, key=None):
             "Especially xsteps and ysteps now do not correspoind "
             "to real resolution of individual channels.")
         
-#        xstep, ystep = None, None
-        
         # when array does not contain consistent data
         # (in terms of data resolution), then xsteps
         # and ysteps for spmdata are chosen as minima
         # of xsteps and ysteps over all layers
         xstep, ystep = min(xsteps), min(ysteps)
         xnums, ynums = xnumsold.copy(), ynumsold.copy()
-#        xnums = [lay.xnum for lay in spmdata.layers]
-#        ynums = [lay.ynum for lay in spmdata.layers]
     
     # upsample or downsample?
     else:
@@ -154,10 +150,6 @@ def _embed_layers(spmdata, finer=None, key=None):
             print("load_data: Higher-resolution data will be "
                 "downsampled.")
 
-#        xnums = [lay.xnum for lay in spmdata.layers]
-#        ynums = [lay.ynum for lay in spmdata.layers]
-#        print(("load_data: Original dimensions:\n\txnums = {}"
-#            "\n\tynums = {}").format(xnums, ynums))
         print(("load_data: Original dimensions:\n\txnums = {}"
             "\n\tynums = {}").format(xnumsold, ynumsold))
         
@@ -167,10 +159,6 @@ def _embed_layers(spmdata, finer=None, key=None):
         ynums = [int(lay.yran / ystep) for lay in spmdata.layers]
         print(("load_data: New dimensions:\n\txnums = {}"
             "\n\tynums = {}").format(xnums, ynums))
-        
-#    print("xnums: ", xnums)
-#    print("aha: ", "\n".join([str((lay.xnum, xn, lay.xran, xstep, lay.filename)) for lay, xn in zip(spmdata.layers, xnums)]))
-    print("\n".join([str((lay.xnum, xn, lay.xran, lay.xoffset, lay.filename)) for lay, xn in zip(spmdata.layers, xnums)]))
         
     # dimensions of new arrays
     xnum, ynum = max(xnums), max(ynums)
@@ -200,7 +188,6 @@ def _embed_layers(spmdata, finer=None, key=None):
         for i, lay in enumerate(spmdata.layers):
             if chan not in lay.channels.keys(): continue
             
-#            if xnums[i] == lay.xnum and ynums[i] == lay.ynum:
             if  xnums[i] == xnumsold[i] and \
                 ynums[i] == ynumsold[i]:
                 # if no resampling is necessary, use directly

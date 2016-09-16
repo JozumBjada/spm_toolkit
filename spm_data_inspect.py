@@ -129,9 +129,13 @@ def _initialize_plots(arrs, unitdir, vextr, layer, interpolation,
         axes5.set_adjustable('box-forced')
 
         import warnings        
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            plt.colorbar(imag1, cax=axes5)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                plt.colorbar(imag1, cax=axes5)
+        except ValueError as err:
+            print("err: ", err)
+        
         
         # bottom cut
         axes3 = divider.append_axes("bottom", size=size, pad=0.2,
@@ -429,24 +433,29 @@ class _MoveCutsVer:
         self.fig, self.rangelayer = fig, rangelayer
         self.unitdir = unitdir
         
-#        self.ccc = 1
-        
         self.cid = fig.canvas.mpl_connect('scroll_event', self)
+
+        # prepare list of mins and maxs so these do not have to
+        # be reevaluated every time the depicted layer is changed
+        if self.rangelayer == 'each':  
+            self.lims = [None] * len(self.arrs)
+            for i, (idnum, chan, val) in enumerate(self.arrs):              
+                imgdata = val[self.layer[0]]
+                self.lims[i] = (
+                    np.nanmin(imgdata),
+                    np.nanmax(imgdata))
 
     def __call__(self, event):
         # adjust layer according to mouse scroll
-        
-#        print("NO TY VOLE!!! ", self.ccc)
-#        self.ccc += 1
         
         # update layer
         self.layer[0] += event.step
         
         # if self.layer[0] moves out of valid bounds, do nothing
-        if self.layer[0] >= self.numl:
-            self.layer[0] = self.numl - 1
+        if  self.layer[0] >= self.numl:
+            self.layer[0]  = self.numl - 1
             return
-        if self.layer[0] < 0:
+        if  self.layer[0] < 0:
             self.layer[0] = 0
             return
 
@@ -468,12 +477,17 @@ class _MoveCutsVer:
 
         # adjust scaling of values for given layer
         if self.rangelayer == 'each':     
-            for img, (idnum, chan, val) \
-                in zip(self.imglist, self.arrs):              
+            for img, (idnum, chan, val), (vmin, vmax) \
+                in zip(self.imglist, self.arrs, self.lims):              
                 imgdata = val[self.layer[0]]
                 img.set_data(imgdata)
-                img.set_clim(vmin=np.nanmin(imgdata))
-                img.set_clim(vmax=np.nanmax(imgdata))
+                
+                # it is necessary to set both min and max at once,
+                # otherwise errors are raised since max obtained
+                # from previous layer may be smaller then min
+                # of the current layer etc.
+                img.set_clim(vmin=vmin, vmax=vmax)               
+
         else:          
             for img, (idnum, chan, val) \
                 in zip(self.imglist, self.arrs):   

@@ -13,10 +13,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from scipy.ndimage.interpolation import \
     rotate
-#    shift, zoom, rotate, affine_transform
-
-
-
 
 """module containing SPMdata class
 """
@@ -45,7 +41,6 @@ class SPMdata:
         # it is possible that each SPMdata structure has its
         # own ad hoc channels with their own names and units
         self.units = {}
-#        self.units = UNITS
         
         # BEWARE: self.layers[i].channels[chan] is a view of
         # self.channels[chan][i, 
@@ -61,6 +56,11 @@ class SPMdata:
         # structure
         self.description = "--No description given yet.--"
         
+        # channel names may be too long to be handled
+        # conveniently, so they may be renamed in which case
+        # original names are stored in self.origname
+        self.origname = {}
+        
         if paths is not None:
             self.load_data(paths, finer=finer)
         
@@ -71,16 +71,133 @@ class SPMdata:
         
         return iter(self.layers)
     	
+    def create_shortcuts(self, template="ch", updateorig=False):
+        """rename all channels in SPMdata structure; this may be
+        handy when original names of channels are too long or they
+        are not valid identifiers; shortcuts are created in as 
+        follows:
+            (new forward channel name) = 
+                (template) + (number of the channel),
+            (new forward channel name) = 
+                (template) + (number of the channel) + BCKSUFF,
+        string BCKSUFF at the end of backward channel names is
+        important, since it is used by routines such as routine
+        'is_backward_scan' to determine whether the given channel
+        is backward channel
+        
+        updateorig - if True, then original names of channels are
+            stored in sef.origname dictionary
+        """
+        
+        # channels where both forward and backward scan is present
+        bothlist = [chan for chan in sorted(self.channels)
+            if not is_backward_scan(chan)]
+        bothlist = [chan for chan in bothlist
+            if get_backward_scan(chan) in self.channels]
+        
+        # channels where only forward or backward scan is present
+        bcklist = [chan for chan in sorted(self.channels)
+            if is_backward_scan(chan) and \
+            get_forward_scan(chan) not in self.channels]
+        forlist = [chan for chan in sorted(self.channels)
+            if not is_backward_scan(chan) and \
+            get_backward_scan(chan) not in self.channels]
+        singlist = bcklist + forlist
+        
+        # rename channels from bothlist
+        for i, chan in enumerate(bothlist):
+            chanf, chanb = chan, get_backward_scan(chan)
+            
+            newchanf = template + str(i)
+            newchanb = get_backward_scan(newchanf)
+
+            self.rename_channel(chanf, newchanf,
+                updateorig=updateorig)
+
+            self.rename_channel(chanb, newchanb,
+                updateorig=updateorig)
+
+        initi = i
+
+        # rename channels from singlist
+        for i, chan in enumerate(singlist):
+            newchan = template + str(i + initi)
+            if is_backward_scan(chan):
+                newchan = get_backward_scan(newchan)
+            
+            self.rename_channel(chan, newchan,
+                updateorig=updateorig)
+            
+    def rename_channel(self, chan, newchan, updateorig=False):
+        """change name of channel 'chan' into 'newchan'; not only
+        key in self.channels, self.xsteps etc. is changed, but
+        also key is changed in all layers and attribute self.chan
+        is deleted (if it exists) and new array self.newchan is
+        created instead
+        
+        chan - original name of channel
+        newchan - new name of the channel; this name must be a 
+            valid identifier (i.e. "newchan.isidentifier" returns
+            True);
+            REMEMBER, THAT IF newchan ENDS WITH 'BCKSUFF', IT WILL
+            BE UNDERSTOOD AS A BACKWARD CHANNEL
+        updateorig - if True, then original name of the channel is
+            stored in sef.origname dictionary
+        """
+        
+        # is channel chan in SPMdata structure?
+        if chan not in self.channels.keys():
+            print(("rename_channel: No channel '{}' present. "
+                "Halt.").format(chan))
+            return
+        
+        # is newchan valid identifier?
+        if not newchan.isidentifier():
+            print("rename_channel: Invalid new name of the "
+                "channel.")
+            return
+                    
+        # is there in self.channels already a channel called
+        # newchan?
+        if newchan in self.channels.keys():
+            print(("rename_channel: Name '{}' already present "
+                "in channels. Choose another name. Halt."
+                ).format(newchan))
+            return
+                    
+        # direction of the scan
+        drc = 'backward' if is_backward_scan(chan) else 'forward'
+                
+        # add channel with name newchan
+        self.add_channel(newchan, self.channels[chan],
+            direction=drc, units=self.units[chan],
+            xofflist=self.xoffinds[chan],
+            yofflist=self.yoffinds[chan],
+            xnum=self.xnums, ynum=self.ynums,
+            xstep=self.xsteps[chan], ystep=self.xsteps[chan],
+            verbose=False)
+                   
+        # delete channel with the name chan 
+        self.del_chan(chan)
+                    
+        # store original name of the channel
+        if updateorig:
+            self.origname[newchan] = chan
+        else:
+            if chan in self.origname:
+                self.origname[newchan] = self.origname[chan]
+    	
     def initrotate(self):
         """
         """
         
+        # TODO
         
         
         for i, lay in enumerate(self.layers):
             angle = lay.scanangle
             
-            angle = -angle
+#            angle = -angle
             
             print("angle: ", angle)
 #            print("lay.channels: ", lay.channels)
@@ -417,7 +534,7 @@ class SPMdata:
     def add_channel(self, channame, arr, direction='forward',
         units=None, deep=True, xofflist=None, yofflist=None,
         xnum=None, ynum=None, xstep=1.0, ystep=1.0,
-        ignorenans=False):
+        ignorenans=False, verbose=True):
         """add a new channel to the structure
         
         arr - array to represent the channel, if arr corresponds
@@ -460,6 +577,9 @@ class SPMdata:
             index in the arrays for individual channels;
             if they are left unspecified, then these are by
             default set to 1 to the SPMdata structure
+        verbose - if False, then no final message is printed, this
+            option is used while add_channel is a subroutine of 
+            another routine
         """
         
         # process the channel name with respect to the direction
@@ -530,12 +650,7 @@ class SPMdata:
         if units is None:
             self.units[channame] = UNITS[UNKNOWN]
         else:
-            if units in self.units:
-                self.units[channame] = UNITS[units]
-            else:
-                print(("add_channel: Unknown units '{}'. Default"
-                    " units used instead.").format(units))
-                self.units[channame] = UNITS[UNKNOWN]
+            self.units[channame] = units
         
         # initialize offinds and adjust them to match number of
         # layers
@@ -586,8 +701,9 @@ class SPMdata:
         self.xsteps[channame] = xstep
         self.ysteps[channame] = ystep
         
-        print(("add_channel: New channel '{}' successfully"
-            " added.").format(channame))
+        if verbose:
+            print(("add_channel: New channel '{}' successfully"
+                " added.").format(channame))
         
     # PROPERTIES, AUXILIARY INQUIRING FUNCTIONS, GETTERS
         
@@ -643,19 +759,39 @@ class SPMdata:
         """print channels present in self
         """
         
+        NUM_CHARS = 25 
+        
         if len(self.channels.keys()) == 0:
             print("print_channels: There is no channel.")
             return
         
-        print(("print_channels: There are {} channels:\n\t"
-            "--- forward ---\t\t--- backward ---").format(
-            len(self.channels.keys())))
+        ORIG_STR = " (original channel names are in parentheses)"
+        
+        print(("print_channels: There are {0} channels{4}"
+            ":\n\t{1:{3}}\t{2:{3}}").format(
+            len(self.channels.keys()),
+            "--- forward ---", "--- backward ---", NUM_CHARS,
+            ORIG_STR if self.origname else ""))
         for chan in sorted(self.channels.keys()):
-            if is_backward_scan(chan): continue
-            fchan = chan
-            bchan = get_backward_scan(fchan)
-            if bchan not in self.channels.keys(): bchan = ""
-            print("\t{:20}\t{:20}".format(fchan, bchan))
+            if is_backward_scan(chan):
+                if get_forward_scan(chan) not in self.channels:
+                    fchan = ""
+                    bchan = chan   
+                else:            
+                    continue
+            else:
+                fchan = chan
+                bchan = get_backward_scan(chan)
+                if bchan not in self.channels:
+                    bchan = ""
+                            
+            if fchan in self.origname:
+                fchan += " (" + self.origname[fchan] + ")"
+            if bchan in self.origname:
+                bchan += " (" + self.origname[bchan] + ")"
+
+            print("\t{0:{2}}\t{1:{2}}".format(
+                fchan, bchan, NUM_CHARS))
                 
     @property
     def numlay(self):
@@ -669,8 +805,9 @@ class SPMdata:
         """index offsets in x-direction for each channel
         """
         
-        return {chan: [lay.xoffind[chan]
-            for lay in self.layers if chan in lay.channels]
+        return {chan: [(lay.xoffind[chan] 
+            if chan in lay.channels else 0)
+            for lay in self.layers]
             for chan in self.channels.keys()}
 
     @property
@@ -678,8 +815,9 @@ class SPMdata:
         """index offsets in y-direction for each channel
         """
         
-        return {chan: [lay.yoffind[chan]
-            for lay in self.layers if chan in lay.channels]
+        return {chan: [(lay.yoffind[chan]
+            if chan in lay.channels else 0)
+            for lay in self.layers]
             for chan in self.channels.keys()}
     
     def print_offinds(self, chan):
@@ -1040,8 +1178,6 @@ class SPMdata:
                 ]
         
         res = {}    
-        
-        print("cl: ", cl)
         
         # average channels...
         for chan in cl:
