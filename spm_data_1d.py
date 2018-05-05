@@ -1,5 +1,7 @@
 from .spm_data_cuts import *
 
+print("ahoj")
+
 class LineData:
     """1D data
     """
